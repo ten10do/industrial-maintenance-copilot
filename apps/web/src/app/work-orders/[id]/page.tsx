@@ -118,7 +118,7 @@ export default function WorkOrderDetail() {
       </div>
 
       {/* Action Buttons */}
-      {(canEdit || canSubmit || canApprove || (isSupervisor && ['pending_dispatch'].includes(wo.status))) && (
+      {(canEdit || canSubmit || canApprove || (isSupervisor && ['pending_dispatch'].includes(wo.status)) || (isAssignee && wo.status === 'assigned')) && (
         <div className="card flex flex-wrap gap-2">
           {isAssignee && wo.status === 'assigned' && <button onClick={() => handleAction('accept')} className="btn btn-primary"><Play size={16} /> 接受工单</button>}
           {isAssignee && wo.status === 'accepted' && <button onClick={() => handleAction('start')} className="btn btn-success"><Play size={16} /> 开始维修</button>}

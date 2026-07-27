@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getSupervisorDashboard, getTechnicianDashboard } from '@/lib/api';
 import { Wrench, Clock, CheckCircle, AlertTriangle, TrendingUp, ArrowRight } from 'lucide-react';
+import { STATUS_LABELS, PRIORITY_LABELS } from '@/lib/types';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -151,5 +152,5 @@ function StatusBadge({ status }: { status: string }) {
 
 function PriorityBadge({ priority }: { priority: string }) {
   const cls: any = { P1: 'badge-p1', P2: 'badge-p2', P3: 'badge-p3', P4: 'badge-p4' };
-  return <span className={`badge ${cls[priority] || ''}`}>{priority}</span>;
+  return <span className={`badge ${cls[priority] || ''}`}>{PRIORITY_LABELS[priority] || priority}</span>;
 }
