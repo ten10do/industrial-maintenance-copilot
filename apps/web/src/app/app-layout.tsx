@@ -3,7 +3,7 @@ import { ReactNode, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
-  LayoutDashboard, AlertTriangle, Wrench, Cpu, BookOpen, Settings, Menu, X, LogOut, ChevronRight
+  LayoutDashboard, AlertTriangle, Wrench, Cpu, BookOpen, Bot, Settings, Menu, X, LogOut, ChevronRight
 } from 'lucide-react';
 
 interface NavItem {
@@ -19,6 +19,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: '维修工单', href: '/work-orders', icon: <Wrench size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '设备台账', href: '/equipment', icon: <Cpu size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '知识库', href: '/knowledge', icon: <BookOpen size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: 'AI 助手', href: '/copilot', icon: <Bot size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '系统管理', href: '/admin', icon: <Settings size={18} />, roles: ['admin'] },
 ];
 

@@ -133,6 +133,12 @@ export async function listKnowledge(params?: Record<string, string>) {
   const qs = params ? '?' + new URLSearchParams(params).toString() : '';
   return request<{ items: any[]; total: number }>(`/knowledge${qs}`);
 }
+export async function getKnowledge(id: number) { return request<any>(`/knowledge/${id}`); }
+export async function createKnowledge(data: any) { return request<any>('/knowledge', { method: 'POST', body: JSON.stringify(data) }); }
+export async function updateKnowledge(id: number, data: any) {
+  return request<any>(`/knowledge/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+export async function deleteKnowledge(id: number) { return request<any>(`/knowledge/${id}`, { method: 'DELETE' }); }
 export async function searchKnowledge(q: string, faultCode?: string, equipmentTypeId?: number) {
   const params = new URLSearchParams({ q });
   if (faultCode) params.set('fault_code', faultCode);

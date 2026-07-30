@@ -72,3 +72,26 @@ export const URGENCY_LABELS: Record<string, string> = {
 export const FAULT_REPORT_STATUS_LABELS: Record<string, string> = {
   pending: '待处理', converted: '已转工单', closed: '已关闭',
 };
+
+export const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
+  manual: '维修手册', sop: '标准作业程序', safety: '安全规程', case: '维修案例',
+  fault_code: '故障代码', experience: '维护经验',
+};
+
+export interface Citation {
+  source_type: string;
+  source_id: number;
+  title: string;
+  excerpt?: string;
+  relevance_score: number;
+  url?: string;
+}
+
+export interface AskResult {
+  answer: string;
+  confidence: number;
+  citations: Citation[];
+  warnings: string[];
+  is_mock: boolean;
+  disclaimer: string;
+}
