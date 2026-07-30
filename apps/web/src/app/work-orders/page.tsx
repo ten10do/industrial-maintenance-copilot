@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { listWorkOrders, listTechnicians, assignWorkOrder, cancelWorkOrder } from '@/lib/api';
@@ -21,7 +21,7 @@ export default function WorkOrderList() {
   const [assigning, setAssigning] = useState<number | null>(null);
   const [techs, setTechs] = useState<any[]>([]);
 
-  const fetch = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     const params: any = { page: String(page), page_size: '20' };
     if (statusFilter) params.status_filter = statusFilter;
@@ -34,9 +34,9 @@ export default function WorkOrderList() {
     } catch (e: any) {
       toast.error(e.message);
     } finally { setLoading(false); }
-  };
+  }, [page, statusFilter, keyword, mine]);
 
-  useEffect(() => { fetch(); }, [page, statusFilter, mine]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const openAssign = async (woId: number) => {
     setAssigning(woId);
@@ -48,7 +48,7 @@ export default function WorkOrderList() {
       await assignWorkOrder(woId, { assignee_id: techId });
       toast.success('分派成功');
       setAssigning(null);
-      fetch();
+      fetchData();
     } catch (e: any) { toast.error(e.message); }
   };
 
@@ -78,7 +78,7 @@ export default function WorkOrderList() {
         )}
         <div className="flex-1 min-w-0" />
         <div className="relative">
-          <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索工单..." className="pl-8 pr-3 py-1.5 text-sm" onKeyDown={e => { if (e.key === 'Enter') { setPage(1); fetch(); } }} />
+          <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索工单..." className="pl-8 pr-3 py-1.5 text-sm" onKeyDown={e => { if (e.key === 'Enter') { setPage(1); fetchData(); } }} />
           <Search size={14} className="absolute left-2.5 top-2 text-muted" />
         </div>
       </div>

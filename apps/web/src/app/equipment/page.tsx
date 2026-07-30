@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { listEquipment, listEquipmentTypes, getEquipmentWorkOrders, copilotEquipmentHistory } from '@/lib/api';
 import { Search, QrCode } from 'lucide-react';
@@ -16,16 +16,16 @@ export default function EquipmentList() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  const fetch = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     const params: any = { page: String(page), page_size: '20' };
     if (keyword) params.keyword = keyword;
     if (typeFilter) params.equipment_type_id = typeFilter;
     if (statusFilter) params.status = statusFilter;
     try { const d = await listEquipment(params); setItems(d.items); setTotal(d.total); } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
-  };
+  }, [page, typeFilter, statusFilter, keyword]);
 
-  useEffect(() => { fetch(); }, [page, typeFilter, statusFilter]);
+  useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { listEquipmentTypes().then(setTypes).catch(() => {}); }, []);
 
   const statusLabel: any = { running: '运行中', fault: '故障', under_repair: '维修中', stopped: '停机', scrapped: '已报废' };
@@ -36,7 +36,7 @@ export default function EquipmentList() {
       <h1 className="text-xl font-bold">设备台账</h1>
       <div className="flex flex-wrap gap-2">
         <div className="relative flex-1 min-w-[200px]">
-          <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索设备编号或名称..." className="pl-8 w-full" onKeyDown={e => { if (e.key === 'Enter') { setPage(1); fetch(); } }} />
+          <input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder="搜索设备编号或名称..." className="pl-8 w-full" onKeyDown={e => { if (e.key === 'Enter') { setPage(1); fetchData(); } }} />
           <Search size={14} className="absolute left-2.5 top-2.5 text-muted" />
         </div>
         <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }} className="text-sm">

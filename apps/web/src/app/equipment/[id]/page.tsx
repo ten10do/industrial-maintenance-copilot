@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getEquipment, getEquipmentWorkOrders, copilotEquipmentHistory } from '@/lib/api';
 import { Bot, QrCode } from 'lucide-react';
@@ -13,16 +13,16 @@ export default function EquipmentDetail() {
   const [history, setHistory] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetch = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [d, w, h] = await Promise.all([getEquipment(Number(id)), getEquipmentWorkOrders(Number(id)), copilotEquipmentHistory(Number(id)).catch(() => null)]);
       setEq(d);
       setWos(w);
       setHistory(h);
     } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
-  };
+  }, [id]);
 
-  useEffect(() => { fetch(); }, [id]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   if (loading) return <div className="text-muted p-6">加载中...</div>;
   if (!eq) return <div className="text-muted p-6">设备不存在</div>;
