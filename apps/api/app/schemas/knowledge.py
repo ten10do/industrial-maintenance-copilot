@@ -105,9 +105,21 @@ class AskRequest(BaseModel):
     fault_code: str | None = None
 
 
+class Citation(BaseModel):
+    """Copilot 回答中的结构化引用来源。"""
+    source_type: str  # "knowledge_article" | "work_order" | "equipment"
+    source_id: int
+    title: str
+    excerpt: str | None = None
+    relevance_score: float = 0.0
+    url: str | None = None
+
+
 class AskResult(BaseModel):
     answer: str
-    sources: list[dict[str, Any]] = []
+    confidence: float = 0.0
+    citations: list[Citation] = []
+    warnings: list[str] = []
     is_mock: bool = True
     disclaimer: str = "以上内容来自知识库检索与 AI 生成，仅供参考，不构成强制维修指令。"
 

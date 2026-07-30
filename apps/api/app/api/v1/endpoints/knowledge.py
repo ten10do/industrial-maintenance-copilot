@@ -9,7 +9,7 @@ from app.core.deps import get_current_user, supervisor_or_admin
 from app.core.exceptions import not_found, paginate
 from app.db.session import get_db
 from app.models.knowledge import KnowledgeArticle
-from app.schemas.common import PageOut
+from app.schemas.common import OkResponse, PageOut
 from app.schemas.knowledge import KnowledgeArticleCreate, KnowledgeArticleOut
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -32,6 +32,17 @@ def list_knowledge(
     q = q.order_by(KnowledgeArticle.created_at.desc())
     items, total = paginate(q, page, page_size)
     return PageOut(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/search")
+def search_knowledge(
+    q: str = Query(..., min_length=1),
+    fault_code: str | None = None,
+    equipment_type_id: int | None = None,
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    return search_articles(db, q, equipment_type_id, fault_code, limit=8)
 
 
 @router.get("/{k_id}", response_model=KnowledgeArticleOut)
@@ -67,12 +78,11 @@ def update_knowledge(k_id: int, payload: KnowledgeArticleCreate, db: Session = D
     return art
 
 
-@router.get("/search")
-def search_knowledge(
-    q: str = Query(..., min_length=1),
-    fault_code: str | None = None,
-    equipment_type_id: int | None = None,
-    db: Session = Depends(get_db),
-    _=Depends(get_current_user),
-):
-    return search_articles(db, q, equipment_type_id, fault_code, limit=8)
+@router.delete("/{k_id}", response_model=OkResponse)
+def delete_knowledge(k_id: int, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+    art = db.get(KnowledgeArticle, k_id)
+    if not art:
+        raise not_found("知识条目不存在")
+    db.delete(art)
+    db.commit()
+    return OkResponse(ok=True)

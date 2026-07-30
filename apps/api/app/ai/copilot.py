@@ -15,6 +15,7 @@ from app.models.workorder import WorkOrder
 from app.schemas.fault import ParseFaultResult
 from app.schemas.knowledge import (
     AskResult,
+    Citation,
     DiagnoseResult,
     HistorySummary,
     MaintenanceReport,
@@ -299,10 +300,32 @@ def _build_report_prompt(wo, eq_name, sections) -> list[dict]:
 
 
 def ask(db: Session, question: str, equipment_type_id: int | None, fault_code: str | None, user_id: int | None = None) -> AskResult:
-    sources = search_articles(db, question, equipment_type_id, fault_code, limit=5)
-    kb_context = "\n\n".join([f"【{s['title']}】(来源:{s['source'] or '内部知识库'}, 得分:{s['score']})\n{s['content'][:800]}" for s in sources])
+    raw_sources = search_articles(db, question, equipment_type_id, fault_code, limit=5)
 
-    if llm_client.enabled and sources:
+    # Build structured citations from search results
+    citations: list[Citation] = []
+    for s in raw_sources:
+        citations.append(Citation(
+            source_type="knowledge_article",
+            source_id=s["article_id"],
+            title=s["title"],
+            excerpt=s.get("summary") or (s["content"][:200] if s.get("content") else None),
+            relevance_score=s["score"],
+            url=f"/knowledge/{s['article_id']}",
+        ))
+
+    # Compute overall confidence from top citation scores
+    confidence = 0.0
+    if citations:
+        top_score = citations[0].relevance_score
+        confidence = round(min(top_score, 1.0), 2)
+
+    # Build safety warnings based on question content
+    warnings: list[str] = _build_safety_warnings(question)
+
+    kb_context = "\n\n".join([f"【{s['title']}】(来源:{s['source'] or '内部知识库'}，得分:{s['score']})\n{s['content'][:800]}" for s in raw_sources])
+
+    if llm_client.enabled and raw_sources:
         prompt = [
             {"role": "system", "content": "你是维修知识问答助手。优先依据提供的知识库内容回答，引用来源。不确定时明确说明。严禁伪造设备手册内容。"},
             {"role": "user", "content": f"知识库参考：\n{kb_context}\n\n问题：{question}"},
@@ -310,17 +333,46 @@ def ask(db: Session, question: str, equipment_type_id: int | None, fault_code: s
         resp = llm_client.chat(prompt)
         if resp["content"]:
             record_ai_interaction(db, user_id, "ask", question, resp["content"], False, resp["model"], resp.get("latency_ms", 0))
-            return AskResult(answer=resp["content"], sources=sources, is_mock=False)
+            return AskResult(answer=resp["content"], confidence=confidence, citations=citations, warnings=warnings, is_mock=False)
         record_ai_interaction(db, user_id, "ask", question, None, True, resp["model"], 0, resp["error"])
 
-    # Mock：基于检索结果拼接
-    if sources:
-        top = sources[0]
+    # Mock: generate answer from top result
+    if raw_sources:
+        top = raw_sources[0]
         answer = f"根据知识库「{top['title']}」：\n{top['content'][:500]}\n\n建议结合现场情况判断。"
     else:
         answer = "知识库中未检索到直接相关内容。建议查阅设备手册或联系资深工程师，AI 不可替代现场专业判断。"
+        warnings.append("当前知识库证据不足，请结合设备手册和现场检查确认。")
+
     record_ai_interaction(db, user_id, "ask", question, answer, True, "mock")
-    return AskResult(answer=answer, sources=sources, is_mock=True)
+    return AskResult(answer=answer, confidence=confidence, citations=citations, warnings=warnings, is_mock=True)
+
+
+def _build_safety_warnings(question: str) -> list[str]:
+    """根据问题内容检测安全风险，返回警告列表。"""
+    warnings: list[str] = []
+    risk_keywords = {
+        "电气": "电气维修存在触电风险，请确保断电并执行上锁挂牌。",
+        "带电": "严禁带电作业！维修前必须切断电源并执行上锁挂牌（LOTO）。",
+        "高压": "高压设备维修有严重安全风险，必须由持证人员操作。",
+        "高温": "高温设备存在烫伤风险，请等待设备冷却并佩戴防护装备。",
+        "液压": "液压系统维修存在高压液体喷射风险，请先释放系统压力。",
+        "气压": "气动系统维修存在气压释放风险，请先排空管路。",
+        "旋转": "旋转机械存在卷入风险，请确保完全停机并锁定。",
+        "联锁": "请勿绕过安全联锁装置，可能导致严重安全事故。",
+        "上锁": "维修前必须执行停机、断电和上锁挂牌程序。",
+        "挂牌": "维修前必须执行停机、断电和上锁挂牌程序。",
+        "拆卸": "拆卸前请确认设备已完全停机并执行相应安全措施。",
+        "短接": "严禁短接安全回路或保护装置，这会直接导致人身伤害和设备损坏。",
+        "短路": "严禁短接安全回路或保护装置，这会直接导致人身伤害和设备损坏。",
+        "绕过": "请勿绕过任何安全装置或保护回路，必须按标准操作流程执行维修。",
+    }
+    lower_q = question.lower()
+    for kw, msg in risk_keywords.items():
+        if kw in question or kw in lower_q:
+            if msg not in warnings:
+                warnings.append(msg)
+    return warnings
 
 
 # ---------------- 6. 历史工单摘要 ----------------
