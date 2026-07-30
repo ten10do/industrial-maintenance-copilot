@@ -51,4 +51,13 @@ def root():
 
 @app.get("/health", tags=["health"])
 def health():
-    return {"status": "ok", "ai_enabled": settings.ai_actually_enabled}
+    db_status = "ok"
+    try:
+        from app.db.session import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        db.close()
+    except Exception:
+        db_status = "unavailable"
+    return {"status": "ok", "database": db_status, "ai_enabled": settings.ai_actually_enabled}
