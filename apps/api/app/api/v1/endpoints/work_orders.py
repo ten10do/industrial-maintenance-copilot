@@ -138,17 +138,17 @@ def _to_out(wo: WorkOrder) -> WorkOrderOut:
 
 
 def _to_detail(db: Session, wo: WorkOrder) -> WorkOrderDetail:
-    out = _to_out(wo)
+    base = _to_out(wo).model_dump()
     fc = None
     if wo.fault_code_id:
         f = db.get(FaultCode, wo.fault_code_id)
         fc = f.code if f else None
-    out.fault_code = fc
-    out.checklist_items = [ChecklistItemOut.model_validate(c) for c in wo.checklist_items]
-    out.logs = [MaintenanceLogOut.model_validate(l) for l in wo.logs]
-    out.labor_entries = [LaborEntryOut.model_validate(e) for e in wo.labor_entries]
-    out.spare_parts = [SparePartUsageOut.model_validate(s) for s in wo.spare_parts]
-    out.status_history = [
+    base["fault_code"] = fc
+    base["checklist_items"] = [ChecklistItemOut.model_validate(c) for c in wo.checklist_items]
+    base["logs"] = [MaintenanceLogOut.model_validate(l) for l in wo.logs]
+    base["labor_entries"] = [LaborEntryOut.model_validate(e) for e in wo.labor_entries]
+    base["spare_parts"] = [SparePartUsageOut.model_validate(s) for s in wo.spare_parts]
+    base["status_history"] = [
         {
             "id": h.id,
             "from_status": h.from_status,
@@ -159,7 +159,7 @@ def _to_detail(db: Session, wo: WorkOrder) -> WorkOrderDetail:
         }
         for h in wo.status_history
     ]
-    return out
+    return WorkOrderDetail(**base)
 
 
 @router.get("", response_model=PageOut[WorkOrderOut])

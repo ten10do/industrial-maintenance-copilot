@@ -109,11 +109,13 @@ def _to_out(db: Session, fr: FaultReport) -> FaultReportOut:
 
 def _to_detail(db: Session, fr: FaultReport) -> FaultReportDetail:
     out = _to_out(db, fr)
+    related_work_order_code = None
+    related_work_order_status = None
     if out.related_work_order_id:
         wo = db.get(WorkOrder, out.related_work_order_id)
         if wo:
-            out.related_work_order_code = wo.code
-            out.related_work_order_status = wo.status.value if wo.status else None
+            related_work_order_code = wo.code
+            related_work_order_status = wo.status.value if wo.status else None
     return FaultReportDetail(
         id=out.id,
         equipment_id=out.equipment_id,
@@ -136,8 +138,8 @@ def _to_detail(db: Session, fr: FaultReport) -> FaultReportDetail:
         fault_code_id=out.fault_code_id,
         created_at=out.created_at,
         related_work_order_id=out.related_work_order_id,
-        related_work_order_code=out.related_work_order_code,
-        related_work_order_status=out.related_work_order_status,
+        related_work_order_code=related_work_order_code,
+        related_work_order_status=related_work_order_status,
     )
 
 
@@ -160,7 +162,7 @@ def list_reports(
 @router.post("", response_model=FaultReportOut)
 def create_report(payload: FaultReportCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
     fr = FaultReport(
-        **payload.model_dump(),
+        **payload.model_dump(exclude={'occurred_at', 'reporter_name'}),
         occurred_at=payload.occurred_at or datetime.now(timezone.utc),
         reporter_name=payload.reporter_name or user.full_name,
         created_by=str(user.id),

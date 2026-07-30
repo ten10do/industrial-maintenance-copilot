@@ -1,0 +1,48 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: imc-api
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - FRONTEND_URL=http://localhost:3000
+      - DATABASE_URL=${DATABASE_URL:-}
+      - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key-in-production}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+      - AI_ENABLED=false
+      - STORAGE_TYPE=local
+      - STORAGE_LOCAL_DIR=./uploads
+      - SEED_ON_STARTUP=true
+    volumes:
+      - api-uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: imc-web
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - API_BASE_URL=http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  api-uploads:

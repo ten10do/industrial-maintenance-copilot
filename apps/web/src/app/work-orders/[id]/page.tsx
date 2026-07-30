@@ -120,7 +120,7 @@ export default function WorkOrderDetail() {
       {/* Action Buttons */}
       {(canEdit || canSubmit || canApprove || (isSupervisor && ['pending_dispatch'].includes(wo.status)) || (isAssignee && wo.status === 'assigned')) && (
         <div className="card flex flex-wrap gap-2">
-          {isAssignee && wo.status === 'assigned' && <button onClick={() => handleAction('accept')} className="btn btn-primary"><Play size={16} /> 接受工单</button>}
+          {isAssignee && wo.status === 'assigned' && <button onClick={() => handleAction('accept')} className="btn btn-primary" data-testid="accept-work-order-button"><Play size={16} /> 接受工单</button>}
           {isAssignee && wo.status === 'accepted' && <button onClick={() => handleAction('start')} className="btn btn-success"><Play size={16} /> 开始维修</button>}
           {isAssignee && wo.status === 'in_progress' && <button onClick={() => handleAction('pause')} className="btn btn-outline"><Pause size={16} /> 暂停</button>}
           {isAssignee && wo.status === 'paused' && <button onClick={() => handleAction('resume')} className="btn btn-success"><Play size={16} /> 继续</button>}
@@ -163,7 +163,7 @@ export default function WorkOrderDetail() {
                 {diag.similar_cases?.length > 0 && <div><div className="text-muted mb-1">相似案例</div>{diag.similar_cases.map((c: any) => <div key={c.work_order_id} className="flex items-center gap-2 p-1.5"><span className="badge badge-p3">{Math.round(c.similarity * 100)}%</span> {c.code} - {c.root_cause || c.title}</div>)}</div>}
                 <div className="text-xs text-muted border-t border-card-border pt-2">{diag.disclaimer}</div>
               </div>
-            ) : <p className="text-sm text-muted">点击"获取建议"让 AI 辅助诊断故障原因</p>}
+            ) : <p className="text-sm text-muted">{'点击\u201C获取建议\u201D让 AI 辅助诊断故障原因'}</p>}
           </div>
 
           {/* Checklist */}

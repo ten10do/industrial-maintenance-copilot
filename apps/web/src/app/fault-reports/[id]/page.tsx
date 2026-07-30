@@ -274,7 +274,7 @@ export default function FaultReportDetail() {
             <span>尚未创建维修工单</span>
           </div>
           {canConvert ? (
-            <button onClick={handleConvert} disabled={converting} className="btn btn-primary w-full">
+            <button onClick={handleConvert} disabled={converting} className="btn btn-primary w-full" data-testid="create-work-order-button">
               {converting ? <><Loader2 size={14} className="animate-spin" /> 创建中...</> : <><Wrench size={14} /> 创建维修工单</>}
             </button>
           ) : !isSupervisorOrAdmin && (
@@ -289,7 +289,7 @@ export default function FaultReportDetail() {
           <ArrowLeft size={14} /> 返回列表
         </button>
         {canConvert && (
-          <button onClick={handleConvert} disabled={converting} className="btn btn-primary flex-1">
+          <button onClick={handleConvert} disabled={converting} className="btn btn-primary flex-1" data-testid="create-work-order-button-bottom">
             {converting ? <><Loader2 size={14} className="animate-spin" /> 创建中...</> : <><Wrench size={14} /> 创建维修工单</>}
           </button>
         )}

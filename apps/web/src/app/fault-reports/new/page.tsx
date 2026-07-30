@@ -335,7 +335,7 @@ export default function NewFaultReport() {
       {/* Action Buttons */}
       <div className="flex gap-3">
         <button onClick={() => router.back()} className="btn btn-outline flex-1">取消</button>
-        <button onClick={handleSubmit} disabled={submitting || !title.trim() || !description.trim()} className="btn btn-primary flex-1 btn-lg">
+        <button onClick={handleSubmit} disabled={submitting || !title.trim() || !description.trim()} className="btn btn-primary flex-1 btn-lg" data-testid="fault-report-submit-button">
           {submitting ? <><Loader2 size={16} className="animate-spin" /> 提交中...</> : <><Send size={16} /> {createWO ? '上报并创建工单' : '提交上报'}</>}
         </button>
       </div>

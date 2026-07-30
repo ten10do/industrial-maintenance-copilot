@@ -114,7 +114,7 @@ def _rule_based_parse(db: Session, text: str) -> ParseFaultResult:
         title=title,
         description=text,
         equipment_keyword=eq_keyword,
-        phenomenon=eq_keyword + (" 异常" if eq_keyword else " 故障"),
+        phenomenon=(eq_keyword + " 异常") if eq_keyword else "设备故障",
         fault_code=fault_code,
         is_downtime=is_downtime,
         affects_production=affects_production,

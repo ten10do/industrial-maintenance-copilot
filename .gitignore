@@ -30,3 +30,7 @@ Thumbs.db
 coverage/
 htmlcov/
 .pytest_cache/
+
+test-results/
+playwright-report/
+e2e-output/
