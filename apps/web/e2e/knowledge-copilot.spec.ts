@@ -37,6 +37,9 @@ test.describe('知识库浏览与查询', () => {
 
     // Wait for items to load
     await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await expect(page.getByText('加载中...', { exact: true })).toBeHidden({
+      timeout: 10000,
+    });
 
     // Verify the page title
     await expect(page.locator('h1')).toContainText('知识库');
@@ -59,13 +62,15 @@ test.describe('知识库浏览与查询', () => {
       expect(firstTitle).toBeTruthy();
 
       // Click first item to enter detail
-      await cards.first().click();
+      await cards.first().click({ force: true });
       await page.waitForURL(/\/knowledge\/\d+/, { timeout: 10000 });
 
       // Wait for detail content to load (title should appear, then info section)
       await expect(page.locator('h1')).toBeVisible({ timeout: 10000 });
       // Detail page shows metadata like source, content type etc.
-      await expect(page.getByText('来源名称').or(page.getByText('内容类型'))).toBeVisible({ timeout: 10000 });
+      await expect(page.getByText('来源名称', { exact: true })).toBeVisible({
+        timeout: 10000,
+      });
     }
   });
 
@@ -127,7 +132,7 @@ test.describe('知识库浏览与查询', () => {
     // Click "新建条目" button
     const newBtn = page.locator('text=新建条目');
     await expect(newBtn).toBeVisible({ timeout: 5000 });
-    await newBtn.click();
+    await newBtn.click({ force: true });
 
     // Should navigate to create page
     await page.waitForURL(/\/knowledge\/new/, { timeout: 10000 });
@@ -151,7 +156,7 @@ test.describe('知识库浏览与查询', () => {
       resp => resp.url().includes('/api/v1/knowledge') && resp.request().method() === 'POST',
       { timeout: 30000 }
     );
-    await submitBtn.click();
+    await submitBtn.click({ force: true });
     const resp = await saveResp.catch(() => null);
 
     if (resp && resp.status() === 200) {
@@ -169,7 +174,7 @@ test.describe('知识库浏览与查询', () => {
         page.once('dialog', async dialog => {
           await dialog.accept();
         });
-        await deleteBtn.click();
+        await deleteBtn.click({ force: true });
         // Wait for redirect back to list after deletion
         await page.waitForURL(/\/knowledge$/, { timeout: 10000 }).catch(() => {});
         await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
@@ -209,7 +214,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
       resp => resp.url().includes('/api/v1/copilot/ask'),
       { timeout: 30000 }
     );
-    await submitBtn.click();
+    await submitBtn.click({ force: true });
     const resp = await askResp.catch(() => null);
 
     if (resp && resp.ok()) {
@@ -270,7 +275,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
       resp => resp.url().includes('/api/v1/copilot/ask'),
       { timeout: 30000 }
     );
-    await submitBtn.click();
+    await submitBtn.click({ force: true });
     const resp = await askResp.catch(() => null);
 
     if (resp && resp.ok()) {
@@ -304,7 +309,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
       resp => resp.url().includes('/api/v1/copilot/ask'),
       { timeout: 30000 }
     );
-    await submitBtn.click();
+    await submitBtn.click({ force: true });
 
     // Wait for the answer panel to render (need result !== null for clear button to show)
     const gotAnswer = await page.locator('.prose').waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
@@ -314,7 +319,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
       // (example questions disappear when result is set, so only the Trash2 clear button remains)
       const clearBtn = page.locator('.card button.btn-outline');
       await expect(clearBtn.first()).toBeVisible({ timeout: 5000 });
-      await clearBtn.first().click();
+      await clearBtn.first().click({ force: true });
 
       // After clearing, result is null → input is cleared, answer disappears
       await page.waitForTimeout(500);
@@ -347,7 +352,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
       resp => resp.url().includes('/api/v1/copilot/ask'),
       { timeout: 30000 }
     );
-    await exampleQ1.click();
+    await exampleQ1.click({ force: true });
     const resp = await askResp.catch(() => null);
 
     if (resp && resp.ok()) {

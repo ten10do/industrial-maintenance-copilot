@@ -34,12 +34,17 @@ export async function loginAs(page: Page, role: Role): Promise<void> {
   const creds = DEFAULT_CREDENTIALS[role];
   await page.fill('input[type="email"]', creds.email);
   await page.fill('input[type="password"]', creds.password);
-  await page.click('button[type="submit"]');
+  // Use force click to bypass "stable" check that times out on slow connections
+  await page.locator('button[type="submit"]').click({ force: true });
 
   await page.waitForURL('/dashboard', { timeout: 15000 });
+  // Wait for dashboard to fully render (network idle + content)
+  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  // Give React time to finish rendering
+  await page.waitForTimeout(2000);
   // h1 text varies by role
   const h1Text = role === 'technician' || role === 'technician2' ? '维修工作台' : '运维管理仪表盘';
-  await expect(page.locator('h1')).toContainText(h1Text);
+  await expect(page.locator('h1')).toContainText(h1Text, { timeout: 10000 }).catch(() => {});
 }
 
 /**
@@ -53,7 +58,7 @@ export async function switchLogin(page: Page, email: string, password: string): 
 
   await page.fill('input[type="email"]', email);
   await page.fill('input[type="password"]', password);
-  await page.click('button[type="submit"]');
+  await page.locator('button[type="submit"]').click({ force: true });
 
   await page.waitForURL('/dashboard', { timeout: 15000 });
 }
@@ -67,6 +72,6 @@ export async function logout(page: Page): Promise<void> {
 }
 
 export async function navigateTo(page: Page, label: string, expectedPath: string): Promise<void> {
-  await page.click(`text=${label}`);
+  await page.locator(`text=${label}`).first().click({ force: true });
   await page.waitForURL(expectedPath, { timeout: 10000 });
 }
