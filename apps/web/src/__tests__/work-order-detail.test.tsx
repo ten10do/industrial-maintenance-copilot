@@ -24,6 +24,9 @@ const mockAddLaborEntry = jest.fn();
 const mockAddSparePartUsage = jest.fn();
 const mockCopilotDiagnose = jest.fn();
 const mockCopilotRewriteLog = jest.fn();
+const mockGetWorkOrderReport = jest.fn();
+const mockRegenerateWorkOrderReport = jest.fn();
+const mockAddAttachment = jest.fn();
 
 jest.mock('@/lib/api', () => ({
   getWorkOrder: (...args: unknown[]) => mockGetWorkOrder(...args),
@@ -41,6 +44,9 @@ jest.mock('@/lib/api', () => ({
   addSparePartUsage: (...args: unknown[]) => mockAddSparePartUsage(...args),
   copilotDiagnose: (...args: unknown[]) => mockCopilotDiagnose(...args),
   copilotRewriteLog: (...args: unknown[]) => mockCopilotRewriteLog(...args),
+  getWorkOrderReport: (...args: unknown[]) => mockGetWorkOrderReport(...args),
+  regenerateWorkOrderReport: (...args: unknown[]) => mockRegenerateWorkOrderReport(...args),
+  addAttachment: (...args: unknown[]) => mockAddAttachment(...args),
 }));
 
 const mockUseAuth = jest.fn();
@@ -110,6 +116,21 @@ const pendingAcceptanceWo = {
 const completedWo = {
   ...pendingAcceptanceWo,
   status: 'completed',
+};
+
+const mockReport = {
+  work_order_id: 1,
+  work_order_code: 'WO-001',
+  summary: 'CNC主轴异响故障已通过更换主轴轴承完成维修，测试结果正常。',
+  sections: [
+    { title: '故障原因', content: '轴承疲劳磨损导致主轴运转时产生异常噪音。' },
+    { title: '维修措施', content: '更换主轴轴承（型号6205），重新校准主轴精度。' },
+    { title: '测试结果', content: '空载及负载测试均正常，精度恢复至出厂标准。' },
+    { title: '后续建议', content: '建议一个月后复查主轴精度。' },
+  ],
+  generation_method: 'template',
+  version: 1,
+  is_mock: false,
 };
 
 beforeEach(() => {
@@ -190,7 +211,10 @@ describe('WorkOrderDetail', () => {
       await waitFor(() => {
         expect(screen.getByText('维修检查清单')).toBeInTheDocument();
         expect(screen.getByText('检查主轴轴承')).toBeInTheDocument();
-        expect(screen.getByText('必填', { exact: false })).toBeInTheDocument();
+        // 必填项用 * 标记
+        const checklistItem = screen.getByTestId('checklist-item-1');
+        expect(checklistItem).toBeInTheDocument();
+        expect(checklistItem.querySelector('.text-red-400')).toBeInTheDocument();
       });
     });
 
@@ -258,7 +282,7 @@ describe('WorkOrderDetail', () => {
       render(<WorkOrderDetail />);
       await waitFor(() => {
         expect(screen.getByText('暂停')).toBeInTheDocument();
-        expect(screen.getByText('提交完工')).toBeInTheDocument();
+        expect(screen.getAllByText('提交完工').length).toBeGreaterThanOrEqual(1);
       });
     });
 
@@ -286,8 +310,8 @@ describe('WorkOrderDetail', () => {
     it('未填写必填项时 toast 错误', async () => {
       const user = userEvent.setup();
       render(<WorkOrderDetail />);
-      await waitFor(() => screen.getByText('提交完工'));
-      await user.click(screen.getByText('提交完工'));
+      await waitFor(() => screen.getByTestId('submit-completion-button'));
+      await user.click(screen.getByTestId('submit-completion-button'));
       await waitFor(() => {
         const toast = require('react-hot-toast').default;
         expect(toast.error).toHaveBeenCalledWith('请填写根本原因、处理措施和测试结果');
@@ -296,9 +320,14 @@ describe('WorkOrderDetail', () => {
 
     it('无维修记录时提交被阻止', async () => {
       mockGetWorkOrder.mockResolvedValue({ ...inProgressWo, logs: [] });
+      // 后端校验：无维修记录返回 422，missing_requirements 使用后端编码
+      const validationError: any = new Error('工单尚未满足完工条件');
+      validationError.status = 422;
+      validationError.response = { data: { missing_requirements: ['maintenance_log'] } };
+      mockSubmitWorkOrder.mockRejectedValue(validationError);
       const user = userEvent.setup();
       render(<WorkOrderDetail />);
-      await waitFor(() => screen.getByText('提交完工'));
+      await waitFor(() => screen.getByTestId('submit-completion-button'));
 
       const rootCauseInput = screen.getByPlaceholderText('故障的根本原因');
       await user.type(rootCauseInput, '轴承磨损');
@@ -307,10 +336,10 @@ describe('WorkOrderDetail', () => {
       const testInput = screen.getByPlaceholderText('测试结果');
       await user.type(testInput, '正常');
 
-      await user.click(screen.getByText('提交完工'));
+      await user.click(screen.getByTestId('submit-completion-button'));
       await waitFor(() => {
-        const toast = require('react-hot-toast').default;
-        expect(toast.error).toHaveBeenCalledWith('至少需要一条维修过程记录');
+        // 完工校验错误：missing_requirements 映射为中文提示
+        expect(screen.getByText('至少需要一条维修过程记录')).toBeInTheDocument();
       });
     });
 
@@ -318,12 +347,12 @@ describe('WorkOrderDetail', () => {
       mockSubmitWorkOrder.mockResolvedValue({});
       const user = userEvent.setup();
       render(<WorkOrderDetail />);
-      await waitFor(() => screen.getByText('提交完工'));
+      await waitFor(() => screen.getByTestId('submit-completion-button'));
 
       await user.type(screen.getByPlaceholderText('故障的根本原因'), '轴承磨损');
       await user.type(screen.getByPlaceholderText('采取的处理措施'), '更换轴承');
       await user.type(screen.getByPlaceholderText('测试结果'), '正常');
-      await user.click(screen.getByText('提交完工'));
+      await user.click(screen.getByTestId('submit-completion-button'));
 
       await waitFor(() => {
         expect(mockSubmitWorkOrder).toHaveBeenCalledWith(1, expect.objectContaining({
@@ -418,7 +447,7 @@ describe('WorkOrderDetail', () => {
       await user.click(screen.getByText('记录工时'));
       await waitFor(() => {
         const toast = require('react-hot-toast').default;
-        expect(toast.error).toHaveBeenCalledWith('请输入工时');
+        expect(toast.error).toHaveBeenCalledWith('请输入有效工时');
       });
     });
 
@@ -491,7 +520,7 @@ describe('WorkOrderDetail', () => {
     it('主管看到验收区域', async () => {
       render(<WorkOrderDetail />);
       await waitFor(() => {
-        expect(screen.getByText('验收')).toBeInTheDocument();
+        expect(screen.getByText('主管验收')).toBeInTheDocument();
         const approveBtns = screen.getAllByText('验收通过');
         expect(approveBtns.length).toBeGreaterThanOrEqual(1);
       });
@@ -521,6 +550,7 @@ describe('WorkOrderDetail', () => {
   describe('Completed State', () => {
     beforeEach(() => {
       mockGetWorkOrder.mockResolvedValue(completedWo);
+      mockGetWorkOrderReport.mockResolvedValue(mockReport);
       mockUseAuth.mockReturnValue({
         user: { role: 'supervisor', id: 2, full_name: '主管', email: 's@t.com', is_active: true },
       });
@@ -530,8 +560,27 @@ describe('WorkOrderDetail', () => {
       render(<WorkOrderDetail />);
       await waitFor(() => {
         expect(screen.getByText('维修报告')).toBeInTheDocument();
-        expect(screen.getByText('需要继续观察')).toBeInTheDocument();
       });
+      // 验证报告内容
+      expect(screen.getByText('摘要')).toBeInTheDocument();
+      expect(screen.getByText('CNC主轴异响故障已通过更换主轴轴承完成维修，测试结果正常。')).toBeInTheDocument();
+      // 生成方式和版本在同一 <p> 内，用 substring 匹配
+      expect(screen.getByText('模板生成', { exact: false })).toBeInTheDocument();
+      expect(screen.getByText('故障原因')).toBeInTheDocument();
+      expect(screen.getByText('维修措施')).toBeInTheDocument();
+      expect(screen.getByText('测试结果')).toBeInTheDocument();
+      expect(screen.getByText('后续建议')).toBeInTheDocument();
+    });
+
+    it('报告加载失败时展示错误并允许重试', async () => {
+      mockGetWorkOrderReport.mockRejectedValue(new Error('报告生成失败'));
+      render(<WorkOrderDetail />);
+      await waitFor(() => {
+        expect(screen.getByText('报告生成失败')).toBeInTheDocument();
+        expect(screen.getByText('重试')).toBeInTheDocument();
+      });
+      // 工单主体应不受影响
+      expect(screen.getByText('CNC主轴异响')).toBeInTheDocument();
     });
   });
 
@@ -546,7 +595,10 @@ describe('WorkOrderDetail', () => {
       mockGetWorkOrder.mockResolvedValue({ ...assignedWo, safety_risk: '高温烫伤风险' });
       render(<WorkOrderDetail />);
       await waitFor(() => {
-        expect(screen.getByText('安全风险: 高温烫伤风险')).toBeInTheDocument();
+        const riskWarning = screen.getByTestId('safety-risk-warning');
+        expect(riskWarning).toBeInTheDocument();
+        expect(screen.getByText('安全风险')).toBeInTheDocument();
+        expect(screen.getByText('高温烫伤风险')).toBeInTheDocument();
       });
     });
 
