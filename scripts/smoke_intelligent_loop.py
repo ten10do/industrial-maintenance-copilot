@@ -51,7 +51,7 @@ def main() -> None:
         token,
     )
     created_orders = 0
-    for _ in range(10):
+    for _ in range(14):
         result = request("POST", "/intelligence/simulator/tick", {}, token)
         created_orders += result["work_orders_created"]
 
