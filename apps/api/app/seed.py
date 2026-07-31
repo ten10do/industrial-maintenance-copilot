@@ -170,6 +170,7 @@ def _seed(db: Session) -> None:
     admin = User(email="admin@example.com", hashed_password=hash_password(DEMO_PASSWORD), full_name="系统管理员", phone="13800000001", role="admin")  # type: ignore[arg-type]
     sup = User(email="supervisor@example.com", hashed_password=hash_password(DEMO_PASSWORD), full_name="张主管", phone="13800000002", role="supervisor")  # type: ignore[arg-type]
     techs_data = [
+        ("tech@example.com", "演示工程师", "电气维修,PLC编程,伺服调试"),
         ("tech1@example.com", "李工程师", "电气维修,PLC编程,伺服调试"),
         ("tech2@example.com", "王工程师", "机械维修,气动液压,焊接"),
         ("tech3@example.com", "赵工程师", "机器人维护,PLC编程"),
