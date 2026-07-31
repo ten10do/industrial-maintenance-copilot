@@ -6,8 +6,8 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 1 : undefined,
-  outputDir: './e2e-output',
-  reporter: [['list'], ['html', { open: 'never', outputFolder: './playwright-report' }]],
+  outputDir: process.env.PW_OUTPUT_DIR || '/tmp/playwright-output',
+  reporter: [['list'], ['html', { open: 'never', outputFolder: process.env.PW_REPORT_DIR || '/tmp/playwright-report' }]],
   use: {
     baseURL: process.env.E2E_BASE_URL ?? 'http://localhost:3000',
     trace: 'retain-on-failure',

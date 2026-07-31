@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.models.base import (
     MaintenanceLogTypeEnum,
@@ -18,6 +18,7 @@ class ChecklistItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     work_order_id: int
+    category: str = "repair"
     content: str
     order: int
     is_required: bool
@@ -96,6 +97,42 @@ class SparePartUsageCreate(BaseModel):
     quantity: float = 1
     unit: str = "个"
     remark: str | None = None
+
+
+# ---- Update schemas ----
+
+
+class MaintenanceLogUpdate(BaseModel):
+    content: str | None = None
+    log_type: MaintenanceLogTypeEnum | None = None
+    photos: list[str] | None = None
+    logged_at: datetime | None = None
+
+
+class LaborEntryUpdate(BaseModel):
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    hours: float | None = None
+    is_downtime: bool | None = None
+    remark: str | None = None
+
+
+class SparePartUsageUpdate(BaseModel):
+    spare_part_id: int | None = None
+    spare_part_code: str | None = None
+    spare_part_name: str | None = None
+    quantity: float | None = Field(default=None, gt=0)
+    unit: str | None = None
+    remark: str | None = None
+
+
+# ---- Completion validation ----
+
+
+class CompletionValidationError(BaseModel):
+    code: str = "WORK_ORDER_COMPLETION_VALIDATION_FAILED"
+    message: str = "工单尚未满足完工条件"
+    missing_requirements: list[str] = []
 
 
 class WorkOrderBase(BaseModel):
@@ -208,3 +245,40 @@ class StatusHistoryOut(BaseModel):
     changed_by: int | None = None
     changed_at: datetime | None = None
     remark: str | None = None
+
+
+# ---- 维修报告 ----
+
+
+class ReportSectionOut(BaseModel):
+    title: str
+    content: str
+
+
+class ReportOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    work_order_id: int
+    version: int
+    generation_method: str
+    summary: str
+    sections: list[dict] | None = None
+    is_current: bool
+    generated_by: int | None = None
+    created_at: datetime | None = None
+
+
+class ReportGenerateResponse(BaseModel):
+    work_order_id: int
+    work_order_code: str
+    summary: str
+    sections: list[ReportSectionOut] = []
+    generation_method: str
+    version: int
+    is_mock: bool = True
+
+
+class AcceptRequest(BaseModel):
+    acceptance_notes: str | None = None
+    equipment_verified: bool = True
+    safety_verified: bool = True

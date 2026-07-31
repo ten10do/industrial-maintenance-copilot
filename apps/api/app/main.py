@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.router import api_router
 from app.core.config import settings
+from app.db.migrations import upgrade_schema
 from app.db.session import Base, engine
 
 logger = logging.getLogger("app")
@@ -17,7 +18,8 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时建表
+    # 先升级既有数据库，再为全新数据库建表。
+    upgrade_schema(engine)
     Base.metadata.create_all(bind=engine)
     if settings.SEED_ON_STARTUP:
         from app.seed import run_seed_if_empty

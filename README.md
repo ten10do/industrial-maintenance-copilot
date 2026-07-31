@@ -94,6 +94,22 @@ npm run dev
 | tech2@example.com | 维修工程师 | 王工程师 |
 | tech3@example.com | 维修工程师 | 刘工程师 |
 
+## 工单生命周期
+
+工单按以下状态流转，服务端会拒绝所有未列出的跨状态操作：
+
+```text
+待分派 → 已分派 → 已接受 → 处理中 → 待验收 → 已完成
+                       ↕ 暂停
+                                  └→ 已退回 → 重新处理 → 待验收
+```
+
+- 主管或管理员负责创建、编辑、分派、验收、退回和取消工单。
+- 被分派的维修工程师负责接单、开始、暂停/恢复、填写检查清单与维修记录，以及提交完工。
+- 完工前必须填写根本原因、处理措施和测试结果，完成必做检查项，并至少记录一条维修日志、工时和测试步骤。
+- 高风险工单还必须提供完工照片；验收退回后，已上传的照片会保留供重新提交使用。
+- 状态变化、分派和验收分别记录在状态历史、分派历史和验收记录中；验收通过后生成维修报告和知识库候选条目。
+
 ## Docker Compose 启动
 
 ```bash
@@ -156,12 +172,20 @@ docker compose down
 
 ## 数据库迁移
 
-项目当前使用 SQLAlchemy `create_all` 自动建表，无需单独迁移步骤。
+项目使用 SQLAlchemy `create_all` 创建新数据库，并在应用启动时执行幂等的兼容升级。
 
 启动时自动执行：
-1. 检查数据库表是否存在
-2. 不存在则创建所有表
-3. 如果 `SEED_ON_STARTUP=true` 且数据为空，填充演示数据
+1. 检查并升级旧数据库中的工单检查清单字段
+2. 按标准清单内容回填安全、诊断、维修和测试类别
+3. 创建尚不存在的表
+4. 如果 `SEED_ON_STARTUP=true` 且数据为空，填充演示数据
+
+迁移回归测试：
+
+```bash
+cd apps/api
+pytest tests/test_database_migrations.py
+```
 
 ## 测试
 
@@ -209,6 +233,12 @@ E2E 测试前提：
 1. 后端运行在 `localhost:8000`
 2. 前端运行在 `localhost:3000`（或通过 `E2E_BASE_URL` 指定）
 3. 已安装 Playwright 浏览器：`npx playwright install chromium`
+
+生命周期专项回归使用 Playwright runner（不要通过 Jest/Vitest 执行）：
+
+```bash
+npx playwright test e2e/work-order-lifecycle.spec.ts
+```
 
 ## TypeScript 检查
 

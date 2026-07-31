@@ -4,12 +4,15 @@ import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
   getWorkOrder, acceptWorkOrder, startWorkOrder, pauseWorkOrder, resumeWorkOrder,
-  submitWorkOrder, approveWorkOrder, rejectWorkOrder, updateChecklistItem,
+  submitWorkOrder, approveWorkOrder, rejectWorkOrder,
   addMaintenanceLog, addLaborEntry, addSparePartUsage, copilotDiagnose,
-  copilotRewriteLog, copilotGenerateReport, cancelWorkOrder
+  copilotRewriteLog, addAttachment, cancelWorkOrder
 } from '@/lib/api';
-import { STATUS_LABELS, PRIORITY_LABELS, LOG_TYPE_LABELS } from '@/lib/types';
-import { Wrench, Clock, CheckCircle, AlertTriangle, Play, Pause, Send, XCircle, RefreshCw, Bot } from 'lucide-react';
+import { STATUS_LABELS, PRIORITY_LABELS, LOG_TYPE_LABELS, CompletionValidationError } from '@/lib/types';
+import { Wrench, Clock, CheckCircle, AlertTriangle, Play, Pause, Send, XCircle, RefreshCw, Bot, Shield, Camera } from 'lucide-react';
+import SafetyChecklist from '@/components/work-orders/safety-checklist';
+import CompletionValidationDisplay from '@/components/work-orders/completion-validation';
+import MaintenanceReport from '@/components/work-orders/maintenance-report';
 import toast from 'react-hot-toast';
 
 export default function WorkOrderDetail() {
@@ -28,9 +31,13 @@ export default function WorkOrderDetail() {
   // 备件
   const [spForm, setSpForm] = useState({ spare_part_name: '', quantity: 1, unit: '个', remark: '' });
   // 完工
-  const [submitForm, setSubmitForm] = useState({ root_cause: '', action_taken: '', replaced_parts: '', test_result: '', equipment_status_after: 'running', follow_up_advice: '', needs_observation: false });
+  const [submitForm, setSubmitForm] = useState({ root_cause: '', action_taken: '', replaced_parts: '', test_result: '', equipment_status_after: 'running', follow_up_advice: '', needs_observation: false, completion_photos: [] as string[] });
   // 退回原因
   const [rejectReason, setRejectReason] = useState('');
+  // 完工校验错误
+  const [validationError, setValidationError] = useState<CompletionValidationError | null>(null);
+  // 上传中
+  const [uploading, setUploading] = useState(false);
 
   const fetch = useCallback(async () => {
     try { const d = await getWorkOrder(Number(id)); setWo(d); } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
@@ -38,35 +45,87 @@ export default function WorkOrderDetail() {
 
   useEffect(() => { fetch(); }, [fetch]);
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setValidationError(null); }, [wo?.status]);
+
   const handleAction = async (action: string, data?: any) => {
     try {
       const actions: any = { accept: acceptWorkOrder, start: startWorkOrder, pause: pauseWorkOrder, resume: resumeWorkOrder, cancel: cancelWorkOrder };
-      if (action === 'submit') await submitWorkOrder(Number(id), data || submitForm);
-      else if (action === 'approve') await approveWorkOrder(Number(id));
-      else if (action === 'reject') await rejectWorkOrder(Number(id), rejectReason || '需要修改');
-      else if (actions[action]) await actions[action](Number(id));
+      if (action === 'submit') {
+        setValidationError(null);
+        const result = await submitWorkOrder(Number(id), data || submitForm);
+        // submitWorkOrder either returns WorkOrderDetail on success or throws
+      } else if (action === 'approve') await approveWorkOrder(Number(id));
+      else if (action === 'reject') {
+        if (!rejectReason || !rejectReason.trim()) { toast.error('请填写退回原因'); return; }
+        await rejectWorkOrder(Number(id), rejectReason);
+        setRejectReason('');
+      } else if (actions[action]) await actions[action](Number(id));
       toast.success('操作成功');
       fetch();
-    } catch (e: any) { toast.error(e.message); }
-  };
-
-  const handleChecklist = async (itemId: number, completed: boolean) => {
-    try { await updateChecklistItem(Number(id), itemId, { is_completed: completed }); fetch(); } catch (e: any) { toast.error(e.message); }
+    } catch (e: any) {
+      // 处理完工校验错误 (422)
+      if (action === 'submit' && e.status === 422) {
+        setValidationError({
+          code: 'WORK_ORDER_COMPLETION_VALIDATION_FAILED',
+          message: e.message || '工单尚未满足完工条件',
+          missing_requirements: (e as any).response?.data?.missing_requirements || [],
+        });
+        return;
+      }
+      toast.error(e.message);
+    }
   };
 
   const addLog = async () => {
     if (!newLog.content) return toast.error('请输入内容');
-    try { await addMaintenanceLog(Number(id), { ...newLog, logged_at: new Date().toISOString() }); setNewLog({ log_type: 'note', content: '', photos: [] }); setPolishedText(''); fetch(); toast.success('记录已添加'); } catch (e: any) { toast.error(e.message); }
+    try {
+      await addMaintenanceLog(Number(id), { ...newLog, logged_at: new Date().toISOString() });
+      setNewLog({ log_type: 'note', content: '', photos: [] });
+      setPolishedText('');
+      fetch();
+      toast.success('记录已添加');
+    } catch (e: any) { toast.error(e.message); }
   };
 
   const addLabor = async () => {
-    if (!laborForm.hours) return toast.error('请输入工时');
-    try { await addLaborEntry(Number(id), laborForm); setLaborForm({ started_at: '', ended_at: '', hours: 0, is_downtime: false, remark: '' }); fetch(); toast.success('工时已记录'); } catch (e: any) { toast.error(e.message); }
+    if (!laborForm.hours || laborForm.hours <= 0) return toast.error('请输入有效工时');
+    try {
+      await addLaborEntry(Number(id), {
+        ...laborForm,
+        started_at: laborForm.started_at || null,
+        ended_at: laborForm.ended_at || null,
+      });
+      setLaborForm({ started_at: '', ended_at: '', hours: 0, is_downtime: false, remark: '' });
+      fetch();
+      toast.success('工时已记录');
+    } catch (e: any) { toast.error(e.message); }
   };
 
   const addSpare = async () => {
     if (!spForm.spare_part_name) return toast.error('请输入备件名称');
-    try { await addSparePartUsage(Number(id), spForm); setSpForm({ spare_part_name: '', quantity: 1, unit: '个', remark: '' }); fetch(); toast.success('备件已记录'); } catch (e: any) { toast.error(e.message); }
+    if (spForm.quantity <= 0) return toast.error('数量必须大于 0');
+    try {
+      await addSparePartUsage(Number(id), spForm);
+      setSpForm({ spare_part_name: '', quantity: 1, unit: '个', remark: '' });
+      fetch();
+      toast.success('备件已记录');
+    } catch (e: any) { toast.error(e.message); }
+  };
+
+  const doUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const result = await addAttachment(Number(id), file);
+      setSubmitForm(prev => ({
+        ...prev,
+        completion_photos: [...(prev.completion_photos || []), result.url],
+      }));
+      toast.success('照片已上传');
+    } catch (ex: any) { toast.error(ex.message); }
+    finally { setUploading(false); }
   };
 
   const runDiagnosis = async () => {
@@ -83,8 +142,10 @@ export default function WorkOrderDetail() {
   };
 
   const doSubmit = () => {
-    if (!submitForm.root_cause || !submitForm.action_taken || !submitForm.test_result) { toast.error('请填写根本原因、处理措施和测试结果'); return; }
-    if (!wo.logs?.length) { toast.error('至少需要一条维修过程记录'); return; }
+    if (!submitForm.root_cause || !submitForm.action_taken || !submitForm.test_result) {
+      toast.error('请填写根本原因、处理措施和测试结果');
+      return;
+    }
     handleAction('submit', submitForm);
   };
 
@@ -102,6 +163,7 @@ export default function WorkOrderDetail() {
   const canEdit = isAssignee && ['accepted', 'in_progress', 'paused', 'returned'].includes(wo.status);
   const canSubmit = isAssignee && wo.status === 'in_progress';
   const canApprove = isSupervisor && wo.status === 'pending_acceptance';
+  const isReadonly = wo.status === 'completed' || wo.status === 'cancelled';
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
@@ -118,8 +180,8 @@ export default function WorkOrderDetail() {
       </div>
 
       {/* Action Buttons */}
-      {(canEdit || canSubmit || canApprove || (isSupervisor && ['pending_dispatch'].includes(wo.status)) || (isAssignee && wo.status === 'assigned')) && (
-        <div className="card flex flex-wrap gap-2">
+      {!isReadonly && (canEdit || canSubmit || canApprove || (isSupervisor && ['pending_dispatch', 'assigned'].includes(wo.status)) || (isAssignee && wo.status === 'assigned')) && (
+        <div className="card flex flex-wrap gap-2" data-testid="action-buttons">
           {isAssignee && wo.status === 'assigned' && <button onClick={() => handleAction('accept')} className="btn btn-primary" data-testid="accept-work-order-button"><Play size={16} /> 接受工单</button>}
           {isAssignee && wo.status === 'accepted' && <button onClick={() => handleAction('start')} className="btn btn-success"><Play size={16} /> 开始维修</button>}
           {isAssignee && wo.status === 'in_progress' && <button onClick={() => handleAction('pause')} className="btn btn-outline"><Pause size={16} /> 暂停</button>}
@@ -130,6 +192,22 @@ export default function WorkOrderDetail() {
           {isSupervisor && ['pending_dispatch', 'assigned'].includes(wo.status) && <button onClick={() => handleAction('cancel')} className="btn btn-outline"><XCircle size={16} /> 取消工单</button>}
         </div>
       )}
+
+      {/* 退回原因显示 */}
+      {wo.status === 'returned' && wo.rejection_reason && (
+        <div className="card border-red-500/30 bg-red-500/10" data-testid="rejection-reason">
+          <div className="flex items-start gap-2">
+            <XCircle size={16} className="text-red-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-red-400">工单已退回</p>
+              <p className="text-sm text-red-300 mt-1">{wo.rejection_reason}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 完工校验错误 */}
+      {validationError && <CompletionValidationDisplay error={validationError} />}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
@@ -145,8 +223,35 @@ export default function WorkOrderDetail() {
               <Info label="故障代码" value={wo.fault_code || '-'} />
               <Info label="计划完成" value={wo.planned_end_at?.split('T')[0] || '-'} />
             </div>
-            {wo.fault_description && <div className="mt-3 text-sm"><div className="text-muted mb-1">故障描述</div><div className="p-2 rounded bg-white/5">{wo.fault_description}</div></div>}
-            {wo.safety_risk && <div className="mt-3 p-3 rounded border border-red-500/30 bg-red-500/10 text-sm"><AlertTriangle size={14} className="inline mr-1" />安全风险: {wo.safety_risk}</div>}
+            {wo.fault_description && (
+              <div className="mt-3 text-sm">
+                <div className="text-muted mb-1">故障描述</div>
+                <div className="p-2 rounded bg-white/5">{wo.fault_description}</div>
+              </div>
+            )}
+            {/* 影响标记 */}
+            {wo.fault_report_id && !wo.fault_description && (
+              <div className="mt-2 text-xs text-muted">
+                来源：<button className="underline hover:text-white" onClick={() => router.push(`/fault-reports/${wo.fault_report_id}`)}>故障上报 #{wo.fault_report_id}</button>
+              </div>
+            )}
+            {wo.safety_risk && (
+              <div className="mt-3 p-3 rounded border border-red-500/30 bg-red-500/10 text-sm" data-testid="safety-risk-warning">
+                <div className="flex items-start gap-2">
+                  <Shield size={16} className="text-red-400 mt-0.5 flex-shrink-0" />
+                  <div>
+                    <p className="font-medium text-red-400">安全风险</p>
+                    <p className="text-red-300 mt-0.5">{wo.safety_risk}</p>
+                    {(wo.safety_risk || '').includes('带电') && (
+                      <p className="text-red-500 mt-1 text-xs font-bold">严禁带电作业！维修前必须确认设备断电。</p>
+                    )}
+                    {['短接', '短路', '绕过', '联锁'].some(k => (wo.safety_risk || '').includes(k)) && (
+                      <p className="text-red-500 mt-1 text-xs font-bold">严禁短接保护装置和绕过安全联锁！</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* AI Diagnosis */}
@@ -166,28 +271,22 @@ export default function WorkOrderDetail() {
             ) : <p className="text-sm text-muted">{'点击\u201C获取建议\u201D让 AI 辅助诊断故障原因'}</p>}
           </div>
 
-          {/* Checklist */}
+          {/* Checklist — uses SafetyChecklist component */}
           <div className="card">
             <h2 className="font-semibold mb-3">维修检查清单</h2>
-            <div className="space-y-1">
-              {wo.checklist_items?.map((item: any) => (
-                <label key={item.id} className={`flex items-start gap-3 p-2 rounded cursor-pointer ${item.is_completed ? 'bg-green-500/10' : 'hover:bg-white/5'}`}>
-                  <input type="checkbox" checked={item.is_completed} onChange={e => handleChecklist(item.id, e.target.checked)} disabled={!canEdit && wo.status !== 'in_progress'} className="mt-0.5 w-4 h-4" />
-                  <div className="flex-1 text-sm">
-                    <span className={item.is_completed ? 'line-through text-muted' : ''}>{item.content}</span>
-                    {item.is_required && <span className="text-red-400 text-xs ml-1">*必填</span>}
-                    {item.remark && <div className="text-xs text-muted mt-0.5">{item.remark}</div>}
-                  </div>
-                </label>
-              )) || <p className="text-sm text-muted">无检查项</p>}
-            </div>
+            <SafetyChecklist
+              workOrderId={Number(id)}
+              items={wo.checklist_items || []}
+              canEdit={canEdit}
+              onRefresh={fetch}
+            />
           </div>
 
           {/* Maintenance Logs */}
           <div className="card">
             <h2 className="font-semibold mb-3">维修过程记录</h2>
             <div className="space-y-3 mb-4 max-h-80 overflow-y-auto">
-              {wo.logs?.map((log: any) => (
+              {wo.logs?.length > 0 ? wo.logs.map((log: any) => (
                 <div key={log.id} className="p-2 rounded bg-white/5 text-sm">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="badge badge-p3">{LOG_TYPE_LABELS[log.log_type] || log.log_type}</span>
@@ -196,24 +295,24 @@ export default function WorkOrderDetail() {
                   <div>{log.content}</div>
                   {log.ai_polished && <div className="mt-1 p-1.5 rounded bg-primary/10 text-xs"><span className="text-primary-300 font-medium">AI 润色:</span> {log.ai_polished}</div>}
                 </div>
-              )) || <p className="text-sm text-muted">暂无记录</p>}
+              )) : <p className="text-sm text-muted">暂无记录</p>}
             </div>
             {canEdit && (
-              <div className="space-y-2 border-t border-card-border pt-3">
+              <div className="space-y-2 border-t border-card-border pt-3" data-testid="add-log-form">
                 <div className="flex gap-2">
-                  <select value={newLog.log_type} onChange={e => setNewLog({ ...newLog, log_type: e.target.value })} className="text-sm">
+                  <select value={newLog.log_type} onChange={e => setNewLog({ ...newLog, log_type: e.target.value })} className="text-sm" data-testid="log-type-select">
                     {Object.entries(LOG_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                   </select>
                   <button onClick={runRewrite} className="btn btn-sm btn-outline" title="AI润色"><Bot size={14} /></button>
                 </div>
-                <textarea value={newLog.content} onChange={e => setNewLog({ ...newLog, content: e.target.value })} rows={3} className="w-full text-sm" placeholder="记录维修过程..." />
+                <textarea value={newLog.content} onChange={e => setNewLog({ ...newLog, content: e.target.value })} rows={3} className="w-full text-sm" placeholder="记录维修过程..." data-testid="log-content-input" />
                 {polishedText && (
-                  <div className="p-2 rounded bg-primary/10 text-xs text-primary-300">
+                  <div className="p-2 rounded bg-primary/10 text-xs text-primary-300" data-testid="polished-suggestion">
                     建议版本: {polishedText}
                     <button onClick={() => setNewLog({ ...newLog, content: polishedText })} className="ml-2 underline">使用</button>
                   </div>
                 )}
-                <button onClick={addLog} className="btn btn-primary btn-sm">添加记录</button>
+                <button onClick={addLog} className="btn btn-primary btn-sm" data-testid="add-log-button">添加记录</button>
               </div>
             )}
           </div>
@@ -222,39 +321,45 @@ export default function WorkOrderDetail() {
         {/* Sidebar */}
         <div className="space-y-4">
           {/* Labor */}
-          <div className="card">
+          <div className="card" data-testid="labor-section">
             <h3 className="font-semibold text-sm mb-2">工时记录</h3>
-            {wo.labor_entries?.map((e: any) => (
-              <div key={e.id} className="text-xs py-1 flex justify-between"><span>{e.hours}h</span><span className="text-muted">{e.operator_name}</span></div>
-            )) || <p className="text-xs text-muted">无</p>}
+            {wo.labor_entries?.length > 0 ? wo.labor_entries.map((e: any) => (
+              <div key={e.id} className="text-xs py-1 flex justify-between border-b border-card-border last:border-0">
+                <span>{e.hours}h {e.is_downtime && <span className="text-red-400 ml-1">(停机)</span>}</span>
+                <span className="text-muted">{e.operator_name}</span>
+              </div>
+            )) : <p className="text-xs text-muted">无</p>}
             {canEdit && (
-              <div className="space-y-1.5 mt-2 pt-2 border-t border-card-border">
-                <input type="number" value={laborForm.hours || ''} onChange={e => setLaborForm({ ...laborForm, hours: Number(e.target.value) })} placeholder="工时(小时)" className="w-full text-sm" />
+              <div className="space-y-1.5 mt-2 pt-2 border-t border-card-border" data-testid="add-labor-form">
+                <input type="number" value={laborForm.hours || ''} onChange={e => setLaborForm({ ...laborForm, hours: Number(e.target.value) })} placeholder="工时(小时)" className="w-full text-sm" step="0.5" min="0.5" data-testid="labor-hours-input" />
                 <div className="flex gap-2">
                   <label className="flex items-center gap-1 text-xs cursor-pointer">
-                    <input type="checkbox" checked={laborForm.is_downtime} onChange={e => setLaborForm({ ...laborForm, is_downtime: e.target.checked })} /> 停机工时
+                    <input type="checkbox" checked={laborForm.is_downtime} onChange={e => setLaborForm({ ...laborForm, is_downtime: e.target.checked })} data-testid="labor-downtime-checkbox" /> 停机工时
                   </label>
                 </div>
                 <input value={laborForm.remark} onChange={e => setLaborForm({ ...laborForm, remark: e.target.value })} placeholder="备注" className="w-full text-sm" />
-                <button onClick={addLabor} className="btn btn-primary btn-sm btn-block">记录工时</button>
+                <button onClick={addLabor} className="btn btn-primary btn-sm btn-block" data-testid="add-labor-button">记录工时</button>
               </div>
             )}
           </div>
 
           {/* Spare Parts */}
-          <div className="card">
+          <div className="card" data-testid="spare-parts-section">
             <h3 className="font-semibold text-sm mb-2">备件使用</h3>
-            {wo.spare_parts?.map((s: any) => (
-              <div key={s.id} className="text-xs py-1 flex justify-between"><span>{s.spare_part_name} x{s.quantity}{s.unit}</span></div>
-            )) || <p className="text-xs text-muted">无</p>}
+            {wo.spare_parts?.length > 0 ? wo.spare_parts.map((s: any) => (
+              <div key={s.id} className="text-xs py-1 flex justify-between border-b border-card-border last:border-0">
+                <span>{s.spare_part_name} x{s.quantity}{s.unit}</span>
+                {s.remark && <span className="text-muted">{s.remark}</span>}
+              </div>
+            )) : <p className="text-xs text-muted">无</p>}
             {canEdit && (
-              <div className="space-y-1.5 mt-2 pt-2 border-t border-card-border">
-                <input value={spForm.spare_part_name} onChange={e => setSpForm({ ...spForm, spare_part_name: e.target.value })} placeholder="备件名称" className="w-full text-sm" />
+              <div className="space-y-1.5 mt-2 pt-2 border-t border-card-border" data-testid="add-spare-form">
+                <input value={spForm.spare_part_name} onChange={e => setSpForm({ ...spForm, spare_part_name: e.target.value })} placeholder="备件名称" className="w-full text-sm" data-testid="spare-name-input" />
                 <div className="flex gap-2">
-                  <input type="number" value={spForm.quantity} onChange={e => setSpForm({ ...spForm, quantity: Number(e.target.value) })} placeholder="数量" className="w-20 text-sm" />
+                  <input type="number" value={spForm.quantity} onChange={e => setSpForm({ ...spForm, quantity: Number(e.target.value) })} placeholder="数量" className="w-20 text-sm" min="0.1" step="0.1" />
                   <input value={spForm.unit} onChange={e => setSpForm({ ...spForm, unit: e.target.value })} placeholder="单位" className="w-16 text-sm" />
                 </div>
-                <button onClick={addSpare} className="btn btn-primary btn-sm btn-block">添加备件</button>
+                <button onClick={addSpare} className="btn btn-primary btn-sm btn-block" data-testid="add-spare-button">添加备件</button>
               </div>
             )}
           </div>
@@ -263,12 +368,12 @@ export default function WorkOrderDetail() {
           <div className="card">
             <h3 className="font-semibold text-sm mb-2">状态历史</h3>
             <div className="space-y-1 text-xs">
-              {wo.status_history?.map((h: any, i: number) => (
+              {wo.status_history?.length > 0 ? wo.status_history.map((h: any, i: number) => (
                 <div key={i} className="flex items-center gap-2">
                   <span className="text-muted w-20">{h.changed_at?.split('T')[0]}</span>
                   <span className="font-mono">{h.from_status || '-'} → {h.to_status}</span>
                 </div>
-              ))}
+              )) : <p className="text-xs text-muted">无</p>}
             </div>
           </div>
         </div>
@@ -276,56 +381,139 @@ export default function WorkOrderDetail() {
 
       {/* Submit Section (when in_progress) */}
       {canSubmit && (
-        <div className="card">
+        <div className="card" data-testid="submit-section">
           <h2 className="font-semibold mb-3">完工信息</h2>
           <div className="space-y-3">
-            <div><label className="block text-sm mb-1">根本原因 *</label><textarea value={submitForm.root_cause} onChange={e => setSubmitForm({ ...submitForm, root_cause: e.target.value })} rows={2} className="w-full" placeholder="故障的根本原因" /></div>
-            <div><label className="block text-sm mb-1">处理措施 *</label><textarea value={submitForm.action_taken} onChange={e => setSubmitForm({ ...submitForm, action_taken: e.target.value })} rows={2} className="w-full" placeholder="采取的处理措施" /></div>
+            <div><label className="block text-sm mb-1">根本原因 *</label><textarea value={submitForm.root_cause} onChange={e => setSubmitForm({ ...submitForm, root_cause: e.target.value })} rows={2} className="w-full" placeholder="故障的根本原因" data-testid="root-cause-input" /></div>
+            <div><label className="block text-sm mb-1">处理措施 *</label><textarea value={submitForm.action_taken} onChange={e => setSubmitForm({ ...submitForm, action_taken: e.target.value })} rows={2} className="w-full" placeholder="采取的处理措施" data-testid="action-taken-input" /></div>
             <div><label className="block text-sm mb-1">更换部件</label><input value={submitForm.replaced_parts} onChange={e => setSubmitForm({ ...submitForm, replaced_parts: e.target.value })} className="w-full" placeholder="更换的部件(多个用逗号分隔)" /></div>
-            <div><label className="block text-sm mb-1">测试结果 *</label><textarea value={submitForm.test_result} onChange={e => setSubmitForm({ ...submitForm, test_result: e.target.value })} rows={2} className="w-full" placeholder="测试结果" /></div>
+            <div><label className="block text-sm mb-1">测试结果 *</label><textarea value={submitForm.test_result} onChange={e => setSubmitForm({ ...submitForm, test_result: e.target.value })} rows={2} className="w-full" placeholder="测试结果" data-testid="test-result-input" /></div>
+            <div><label className="block text-sm mb-1">修复后设备状态</label>
+              <select value={submitForm.equipment_status_after} onChange={e => setSubmitForm({ ...submitForm, equipment_status_after: e.target.value })} className="text-sm" data-testid="equipment-status-select">
+                <option value="running">运行中</option>
+                <option value="fault">仍有故障</option>
+                <option value="stopped">已停机</option>
+              </select>
+            </div>
             <div><label className="block text-sm mb-1">后续建议</label><textarea value={submitForm.follow_up_advice} onChange={e => setSubmitForm({ ...submitForm, follow_up_advice: e.target.value })} rows={2} className="w-full" placeholder="后续维护建议" /></div>
             <label className="flex items-center gap-2 text-sm cursor-pointer">
               <input type="checkbox" checked={submitForm.needs_observation} onChange={e => setSubmitForm({ ...submitForm, needs_observation: e.target.checked })} />
               需要继续观察
             </label>
+
+            {/* Photo upload for high-risk */}
+            {wo.safety_risk && (
+              <div className="pt-2 border-t border-card-border">
+                <label className="block text-sm mb-1">完工照片（高风险工单必传）</label>
+                <div className="flex items-center gap-2">
+                  <label className="btn btn-sm btn-outline cursor-pointer">
+                    <Camera size={14} /> {uploading ? '上传中...' : '上传照片'}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={doUploadPhoto}
+                      className="hidden"
+                      disabled={uploading}
+                      data-testid="completion-photo-input"
+                    />
+                  </label>
+                  {submitForm.completion_photos?.length > 0 && (
+                    <span className="text-xs text-green-400">已上传 {submitForm.completion_photos.length} 张</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <button onClick={doSubmit} className="btn btn-primary btn-block" data-testid="submit-completion-button">
+              <Send size={16} /> 提交完工
+            </button>
           </div>
         </div>
       )}
 
       {/* Approval Section (supervisor) */}
       {canApprove && (
-        <div className="card space-y-4">
-          <h2 className="font-semibold">验收</h2>
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div><div className="text-muted">根本原因</div><div>{wo.root_cause}</div></div>
-            <div><div className="text-muted">处理措施</div><div>{wo.action_taken}</div></div>
-            <div><div className="text-muted">测试结果</div><div>{wo.test_result}</div></div>
-            <div><div className="text-muted">更换部件</div><div>{wo.replaced_parts || '无'}</div></div>
+        <div className="card space-y-4" data-testid="approval-section">
+          <h2 className="font-semibold">主管验收</h2>
+
+          {/* Completion summary */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div><div className="text-muted text-xs">根本原因</div><div className="mt-0.5">{wo.root_cause}</div></div>
+            <div><div className="text-muted text-xs">处理措施</div><div className="mt-0.5">{wo.action_taken}</div></div>
+            <div><div className="text-muted text-xs">测试结果</div><div className="mt-0.5">{wo.test_result}</div></div>
+            <div><div className="text-muted text-xs">更换部件</div><div className="mt-0.5">{wo.replaced_parts || '无'}</div></div>
           </div>
-          <div className="flex gap-2">
-            <button onClick={() => handleAction('approve')} className="btn btn-success flex-1"><CheckCircle size={16} /> 验收通过</button>
-            <details className="flex-1">
-              <summary className="btn btn-danger w-full"><XCircle size={16} /> 退回修改</summary>
-              <div className="mt-2 space-y-2">
-                <textarea value={rejectReason} onChange={e => setRejectReason(e.target.value)} rows={2} className="w-full" placeholder="退回原因" />
-                <button onClick={() => handleAction('reject')} className="btn btn-danger btn-sm btn-block">确认退回</button>
+
+          {/* Labor summary */}
+          {wo.labor_entries?.length > 0 && (
+            <div className="text-sm pt-2 border-t border-card-border">
+              <div className="text-muted text-xs mb-1">工时汇总</div>
+              <div className="flex gap-4">
+                <span>总工时: {wo.labor_entries.reduce((sum: number, e: any) => sum + e.hours, 0).toFixed(1)}h</span>
+                <span className="text-red-400">停机工时: {wo.labor_entries.filter((e: any) => e.is_downtime).reduce((sum: number, e: any) => sum + e.hours, 0).toFixed(1)}h</span>
               </div>
-            </details>
+            </div>
+          )}
+
+          {/* Spare parts summary */}
+          {wo.spare_parts?.length > 0 && (
+            <div className="text-sm pt-2 border-t border-card-border">
+              <div className="text-muted text-xs mb-1">备件汇总</div>
+              {wo.spare_parts.map((s: any) => (
+                <div key={s.id} className="text-xs">{s.spare_part_name} x{s.quantity}{s.unit}</div>
+              ))}
+            </div>
+          )}
+
+          {/* Follow-up */}
+          {wo.follow_up_advice && (
+            <div className="text-sm pt-2 border-t border-card-border">
+              <div className="text-muted text-xs">后续建议</div>
+              <div className="mt-0.5">{wo.follow_up_advice}</div>
+            </div>
+          )}
+
+          {wo.needs_observation && <div className="badge badge-p2">需要继续观察</div>}
+
+          {/* Action buttons */}
+          <div className="flex gap-2 pt-2 border-t border-card-border">
+            <button onClick={() => handleAction('approve')} className="btn btn-success flex-1" data-testid="approve-button">
+              <CheckCircle size={16} /> 验收通过
+            </button>
+            <div className="flex-1 flex flex-col gap-2">
+              <textarea
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                rows={2}
+                className="w-full text-sm"
+                placeholder="退回原因（必填）"
+                data-testid="reject-reason-input"
+              />
+              <button
+                onClick={() => handleAction('reject')}
+                className="btn btn-danger btn-sm"
+                disabled={!rejectReason.trim()}
+                data-testid="reject-button"
+              >
+                <XCircle size={16} /> 退回修改
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Completed Info */}
+      {/* Maintenance Report for completed orders */}
       {wo.status === 'completed' && (
-        <div className="card space-y-3">
-          <h2 className="font-semibold flex items-center gap-2"><CheckCircle size={16} className="text-green-500" /> 维修报告</h2>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div><div className="text-muted">根本原因</div><div>{wo.root_cause}</div></div>
-            <div><div className="text-muted">处理措施</div><div>{wo.action_taken}</div></div>
-            <div><div className="text-muted">测试结果</div><div>{wo.test_result}</div></div>
-            <div><div className="text-muted">后续建议</div><div>{wo.follow_up_advice || '无'}</div></div>
+        <MaintenanceReport workOrderId={Number(id)} />
+      )}
+
+      {/* Readonly info for cancelled */}
+      {wo.status === 'cancelled' && (
+        <div className="card">
+          <div className="flex items-center gap-2 text-muted">
+            <XCircle size={16} />
+            <span>该工单已取消</span>
           </div>
-          {wo.needs_observation && <div className="badge badge-p2">需要继续观察</div>}
         </div>
       )}
     </div>

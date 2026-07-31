@@ -26,6 +26,7 @@ from app.models.maintenance import (
     Attachment,
     LaborEntry,
     MaintenanceLog,
+    WorkOrderReport,
     WorkOrderSparePart,
 )
 from app.models.user import Skill, TechnicianProfile, User
@@ -64,6 +65,7 @@ __all__ = [
     "MaintenanceLog",
     "LaborEntry",
     "WorkOrderSparePart",
+    "WorkOrderReport",
     "Attachment",
     "KnowledgeArticle",
     "KnowledgeChunk",

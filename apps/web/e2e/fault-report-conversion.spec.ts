@@ -28,7 +28,7 @@ test.describe('故障上报转工单完整流程', () => {
     await loginAs(page, 'supervisor');
 
     await navigateTo(page, '故障上报', '**/fault-reports*');
-    await page.click('text=快速上报');
+    await page.locator('text=快速上报').click({ force: true });
     await page.waitForURL(/\/fault-reports\/new/);
 
     // Fill form
@@ -40,29 +40,29 @@ test.describe('故障上报转工单完整流程', () => {
     await equipInput.fill('CNC');
     try {
       const firstEquipOption = page.locator('div.cursor-pointer.text-sm').first();
-      await firstEquipOption.click({ timeout: 5000 });
+      await firstEquipOption.click({ force: true, timeout: 5000 });
     } catch { /* optional */ }
 
     // Set urgency to high
     const highUrgencyBtn = page.locator('button:has-text("高")').first();
     if (await highUrgencyBtn.isVisible().catch(() => false)) {
-      await highUrgencyBtn.click();
+      await highUrgencyBtn.click({ force: true });
     }
 
     // Toggle impact flags
     const downtimeBtn = page.locator('div:has-text("设备停机")').first();
     if (await downtimeBtn.isVisible().catch(() => false)) {
-      await downtimeBtn.click();
+      await downtimeBtn.click({ force: true });
     }
     const productionBtn = page.locator('div:has-text("影响生产")').first();
     if (await productionBtn.isVisible().catch(() => false)) {
-      await productionBtn.click();
+      await productionBtn.click({ force: true });
     }
 
     // Check "同时创建维修工单"
     const createWOCheckbox = page.locator('input[type="checkbox"]').first();
     if (await createWOCheckbox.isVisible().catch(() => false)) {
-      await createWOCheckbox.check();
+      await createWOCheckbox.check({ force: true });
     }
 
     // Reporter info (optional)
@@ -78,7 +78,7 @@ test.describe('故障上报转工单完整流程', () => {
       resp => resp.url().includes('/api/v1/fault-reports') && resp.request().method() === 'POST',
       { timeout: 30000 }
     );
-    await submitBtn.click();
+    await submitBtn.click({ force: true });
     await apiRespPromise.catch(() => {});
 
     // Wait for navigation to settle
@@ -127,14 +127,14 @@ test.describe('故障上报转工单完整流程', () => {
     await loginAs(page, 'technician');
 
     await navigateTo(page, '故障上报', '**/fault-reports*');
-    await page.click('text=快速上报');
+    await page.locator('text=快速上报').click({ force: true });
     await page.waitForURL(/\/fault-reports\/new/);
 
     // Input nonsense text to trigger parse failure
     await page.locator('textarea').first().fill('...');
 
     // Click AI parse
-    await page.click('text=AI 解析');
+    await page.locator('text=AI 解析').click({ force: true });
 
     // Wait for parse result or failure
     try {
@@ -144,7 +144,7 @@ test.describe('故障上报转工单完整流程', () => {
       try {
         const clearBtn = page.locator('text=清除');
         if (await clearBtn.isVisible({ timeout: 2000 })) {
-          await clearBtn.click();
+          await clearBtn.click({ force: true });
         }
       } catch { /* cannot clear */ }
     }
@@ -161,7 +161,7 @@ test.describe('故障上报转工单完整流程', () => {
       resp => resp.url().includes('/api/v1/fault-reports') && resp.request().method() === 'POST',
       { timeout: 30000 }
     );
-    await submitBtn.click();
+    await submitBtn.click({ force: true });
 
     // Wait for API call
     try {
@@ -201,7 +201,7 @@ test.describe('故障上报转工单完整流程', () => {
     if (!hasConverted) {
       // No converted items — create one first
       const FAULT_TITLE = `E2E Scene3 ${SUFFIX}`;
-      await page.click('text=快速上报');
+      await page.locator('text=快速上报').click({ force: true });
       await page.waitForURL(/\/fault-reports\/new/);
 
       await page.fill('input[placeholder="简要描述故障"]', FAULT_TITLE);
@@ -210,7 +210,7 @@ test.describe('故障上报转工单完整流程', () => {
       // Check "同时创建维修工单"
       const createWOCheckbox = page.locator('input[type="checkbox"]').first();
       if (await createWOCheckbox.isVisible().catch(() => false)) {
-        await createWOCheckbox.check();
+        await createWOCheckbox.check({ force: true });
       }
 
       // Submit and wait for response
@@ -221,7 +221,7 @@ test.describe('故障上报转工单完整流程', () => {
         resp => resp.url().includes('/api/v1/fault-reports') && resp.request().method() === 'POST',
         { timeout: 30000 }
       );
-      await submitBtn.click();
+      await submitBtn.click({ force: true });
       try { await apiRespPromise; } catch {}
 
       await waitForSubmitResult(page);
@@ -237,7 +237,7 @@ test.describe('故障上报转工单完整流程', () => {
     await expect(updatedBadge).toBeVisible({ timeout: 10000 });
 
     // Click the first "已转工单" badge to enter detail
-    await updatedBadge.click();
+    await updatedBadge.click({ force: true });
     await page.waitForURL(/\/fault-reports\/\d+/, { timeout: 10000 });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 

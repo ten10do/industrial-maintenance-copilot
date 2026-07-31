@@ -162,6 +162,15 @@ class TestConvertFaultReportToWorkOrder:
             WorkOrderChecklistItem.work_order_id == wo_id
         ).all()
         assert len(items) > 0
+        assert {item.category for item in items} == {
+            "safety",
+            "diagnosis",
+            "repair",
+            "testing",
+        }
+        assert any(
+            item.category == "testing" and item.is_required for item in items
+        )
 
     def test_admin_can_convert(self, client, auth_admin, fault_report_pending):
         resp = client.post(
