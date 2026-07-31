@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: industrial-maintenance-copilot-api
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ENV
+        value: demo
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_URL
+        sync: false
+      - key: AI_ENABLED
+        value: "false"
+      - key: SEED_ON_STARTUP
+        value: "true"
+      - key: STORAGE_TYPE
+        value: local

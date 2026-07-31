@@ -41,3 +41,5 @@ e2e-output.bak/
 .idea/
 .vscode/
 *.backup
+.netlify/
+.neon
