@@ -16,7 +16,9 @@ venv/
 
 node_modules/
 .next/
+.next.*/
 out/
+tmp/
 
 .env
 .env.local
@@ -34,3 +36,8 @@ htmlcov/
 test-results/
 playwright-report/
 e2e-output/
+e2e-output.bak/
+
+.idea/
+.vscode/
+*.backup
