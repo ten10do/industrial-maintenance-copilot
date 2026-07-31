@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     @property
     def effective_database_url(self) -> str:
         if self.DATABASE_URL:
+            if self.DATABASE_URL.startswith("postgres://"):
+                return self.DATABASE_URL.replace(
+                    "postgres://", "postgresql+psycopg://", 1
+                )
+            if self.DATABASE_URL.startswith("postgresql://"):
+                return self.DATABASE_URL.replace(
+                    "postgresql://", "postgresql+psycopg://", 1
+                )
             return self.DATABASE_URL
         # SQLite 默认文件数据库
         return "sqlite:///./maintenance.db"

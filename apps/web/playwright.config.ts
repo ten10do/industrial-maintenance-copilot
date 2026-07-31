@@ -5,7 +5,7 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   outputDir: process.env.PW_OUTPUT_DIR || '/tmp/playwright-output',
   reporter: [['list'], ['html', { open: 'never', outputFolder: process.env.PW_REPORT_DIR || '/tmp/playwright-report' }]],
   use: {
