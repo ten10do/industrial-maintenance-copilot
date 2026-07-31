@@ -10,6 +10,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import Engine, inspect, text
+from sqlalchemy.schema import DropTable
 
 _CHECKLIST_CATEGORIES = {
     "safety": [
@@ -157,7 +158,9 @@ def downgrade_intelligent_schema(engine: Engine) -> list[str]:
         for table_name in _INTELLIGENCE_DROP_ORDER:
             if table_name not in existing:
                 continue
-            Base.metadata.tables[table_name].drop(bind=connection, checkfirst=True)
+            connection.execute(
+                DropTable(Base.metadata.tables[table_name], if_exists=True)
+            )
             dropped.append(table_name)
     return dropped
 
