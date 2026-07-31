@@ -100,6 +100,16 @@ def technician(db):
 
 
 @pytest.fixture
+def another_technician(db):
+    return _create_user(
+        db,
+        "tech2@test.com",
+        "Technician 2",
+        RoleEnum.technician,
+    )
+
+
+@pytest.fixture
 def admin_user(db):
     return _create_user(db, "admin@test.com", "Admin", RoleEnum.admin)
 
