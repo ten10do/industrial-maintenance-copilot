@@ -60,7 +60,11 @@ export default function WorkOrderList() {
   return (
     <div className="max-w-6xl mx-auto space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">工单管理</h1>
+        <div>
+          <div className="text-xs tracking-[0.18em] uppercase text-primary-400 font-semibold mb-1">Agentic Work Orders</div>
+          <h1 className="text-2xl font-bold">智能工单中心</h1>
+          <p className="text-sm text-muted mt-1">工单管理</p>
+        </div>
         <button onClick={() => router.push('/fault-reports/new')} className="btn btn-primary">
           <Plus size={16} /> 新建工单
         </button>
