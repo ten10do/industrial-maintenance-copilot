@@ -348,7 +348,9 @@ def _seed(db: Session) -> None:
             eq = random.choice(equipment_list)
         else:
             eq = random.choice(eqs_of_type)
-        tech = random.choice(techs)
+        # Keep the public technician account useful after every deterministic reset.
+        # It receives the assigned and paused demo orders (i=1 and i=7).
+        tech = techs[(i - 1) % len(techs)] if i else techs[0]
         created = datetime.now(timezone.utc) - timedelta(days=random.randint(0, 5))
         wo_counter += 1
         priority = PriorityEnum.P1 if i < 2 else random.choice([PriorityEnum.P2, PriorityEnum.P3])
