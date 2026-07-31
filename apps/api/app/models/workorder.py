@@ -116,6 +116,7 @@ class WorkOrderChecklistItem(AuditMixin, Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     work_order_id: Mapped[int] = mapped_column(ForeignKey("work_orders.id", ondelete="CASCADE"), index=True)
+    category: Mapped[str] = mapped_column(String(32), default="repair")
     content: Mapped[str] = mapped_column(String(255))
     order: Mapped[int] = mapped_column(Integer, default=0)
     is_required: Mapped[bool] = mapped_column(Boolean, default=True)

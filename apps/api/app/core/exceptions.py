@@ -12,6 +12,8 @@ T = TypeVar("T")
 class ErrorResponse(BaseModel):
     detail: str
     code: str | None = None
+    work_order_id: int | None = None
+    missing_requirements: list[str] | None = None
 
 
 class Page(BaseModel, Generic[T]):

@@ -1,4 +1,4 @@
-"""维修过程记录、工时、备件使用、附件。"""
+"""维修过程记录、工时、备件使用、附件、维修报告。"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -73,3 +73,18 @@ class Attachment(TimestampMixin, Base):
     file_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     file_size: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+
+class WorkOrderReport(TimestampMixin, Base):
+    """持久化维修报告，支持版本管理。"""
+
+    __tablename__ = "work_order_reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    work_order_id: Mapped[int] = mapped_column(ForeignKey("work_orders.id", ondelete="CASCADE"), index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    generation_method: Mapped[str] = mapped_column(String(16), default="template")  # "ai" | "template"
+    summary: Mapped[str] = mapped_column(Text)
+    sections: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True)
+    generated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)

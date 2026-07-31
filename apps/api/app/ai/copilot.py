@@ -250,7 +250,12 @@ def _mock_rewrite(content: str) -> str:
 # ---------------- 4. 自动生成完工报告 ----------------
 
 
-def generate_report(db: Session, wo_id: int, user_id: int | None = None) -> MaintenanceReport:
+def generate_report(
+    db: Session,
+    wo_id: int,
+    user_id: int | None = None,
+    force_template: bool = False,
+) -> MaintenanceReport:
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         return MaintenanceReport(work_order_id=wo_id, work_order_code="", summary="工单不存在", is_mock=True)
@@ -272,7 +277,7 @@ def generate_report(db: Session, wo_id: int, user_id: int | None = None) -> Main
     ]
     summary = f"工单 {wo.code} 已完成。设备 {eq_name} 故障原因为「{wo.root_cause or '未知'}」，已执行「{wo.action_taken or '维修'}」，测试结果：{wo.test_result or '正常'}。"
 
-    if llm_client.enabled:
+    if llm_client.enabled and not force_template:
         prompt = _build_report_prompt(wo, eq_name, sections)
         resp = llm_client.chat(prompt, json_mode=True)
         if resp["content"]:

@@ -28,18 +28,18 @@ from app.schemas.fault import (
 
 router = APIRouter(prefix="/fault-reports", tags=["fault-reports"])
 
-DEFAULT_CHECKLIST = [
-    "确认设备已停机",
-    "执行断电操作",
-    "执行上锁挂牌（LOTO）",
-    "确认残余能量已释放",
-    "读取并记录故障代码",
-    "检查相关部件状态",
-    "执行维修或更换",
-    "恢复供电",
-    "空载测试",
-    "负载测试",
-    "确认设备恢复正常",
+DEFAULT_CHECKLIST: list[dict] = [
+    {"category": "safety", "content": "确认设备已停机", "is_required": True},
+    {"category": "safety", "content": "执行断电操作", "is_required": True},
+    {"category": "safety", "content": "执行上锁挂牌（LOTO）", "is_required": True},
+    {"category": "safety", "content": "确认残余能量已释放", "is_required": True},
+    {"category": "diagnosis", "content": "读取并记录故障代码", "is_required": True},
+    {"category": "diagnosis", "content": "检查相关部件状态", "is_required": True},
+    {"category": "repair", "content": "执行维修或更换", "is_required": True},
+    {"category": "repair", "content": "恢复供电", "is_required": True},
+    {"category": "testing", "content": "空载测试", "is_required": False},
+    {"category": "testing", "content": "负载测试", "is_required": True},
+    {"category": "testing", "content": "确认设备恢复正常", "is_required": True},
 ]
 
 _HIGH_RISK_KEYWORDS = ["高压", "电气", "液压", "气压", "高温", "旋转"]
@@ -253,8 +253,16 @@ def convert_to_work_order(
         db.flush()
 
         # 生成默认检查清单
-        for i, content in enumerate(DEFAULT_CHECKLIST):
-            db.add(WorkOrderChecklistItem(work_order_id=wo.id, content=content, order=i, is_required=True))
+        for i, item in enumerate(DEFAULT_CHECKLIST):
+            db.add(
+                WorkOrderChecklistItem(
+                    work_order_id=wo.id,
+                    category=item["category"],
+                    content=item["content"],
+                    order=i,
+                    is_required=item["is_required"],
+                )
+            )
 
         # 写入工单状态历史
         now = datetime.now(timezone.utc)
