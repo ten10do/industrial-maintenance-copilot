@@ -43,7 +43,7 @@ export async function loginAs(page: Page, role: Role): Promise<void> {
   // Give React time to finish rendering
   await page.waitForTimeout(2000);
   // h1 text varies by role
-  const h1Text = role === 'technician' || role === 'technician2' ? '维修工作台' : '运维管理仪表盘';
+  const h1Text = role === 'technician' || role === 'technician2' ? '维修工作台' : '智能运维驾驶舱';
   await expect(page.locator('h1')).toContainText(h1Text, { timeout: 10000 }).catch(() => {});
 }
 
