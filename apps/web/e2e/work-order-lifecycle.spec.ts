@@ -119,23 +119,30 @@ async function completeAllChecklistItems(page: any) {
   // Wait for checklist items to be visible
   await page.waitForSelector('[data-testid^="checklist-item-"]', { timeout: 10000 });
 
-  // Get all checklist items that have a checkbox and are not yet completed
+  // Capture stable test IDs because each successful update refreshes and may reorder the list.
   const items = page.locator('[data-testid^="checklist-item-"]');
-  const count = await items.count();
+  const itemTestIds = await items.evaluateAll((elements: Element[]) =>
+    elements
+      .map(element => element.getAttribute('data-testid'))
+      .filter((testId): testId is string => testId !== null)
+  );
 
-  for (let i = 0; i < count; i++) {
-    const item = items.nth(i);
-    const checkbox = item.locator('input[type="checkbox"]');
+  for (const testId of itemTestIds) {
+    const checkbox = page.locator(
+      `[data-testid="${testId}"] input[type="checkbox"]`
+    );
     const isChecked = await checkbox.isChecked();
 
-    if (!isChecked) {
-      // Can edit? Only if not disabled
-      const isDisabled = await checkbox.isDisabled();
-      if (!isDisabled) {
-        await checkbox.check();
-        // Wait for the API call to complete
-        await page.waitForTimeout(300);
-      }
+    if (!isChecked && !(await checkbox.isDisabled())) {
+      const updateResponse = page.waitForResponse(
+        (response: any) =>
+          response.request().method() === 'PUT'
+          && response.url().includes('/checklist/')
+      );
+      await checkbox.check({ force: true });
+      expect((await updateResponse).ok()).toBeTruthy();
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      await expect(checkbox).toBeChecked({ timeout: 5000 });
     }
   }
 }
@@ -514,12 +521,14 @@ test.describe('权限隔离验证', () => {
     await uploadCompletionPhoto(page);
     await page.locator('[data-testid="submit-completion-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 15000 });
+    await expect(page.getByText('待验收', { exact: true })).toBeVisible({ timeout: 10000 });
 
     // Supervisor approves
     await switchLogin(page, 'supervisor@example.com', 'Demo123456');
     await page.goto(`/work-orders/${testData.woId}`);
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
+    await expect(page.locator('[data-testid="approval-section"]')).toBeVisible({ timeout: 5000 });
     await page.locator('[data-testid="approve-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 15000 });
 
