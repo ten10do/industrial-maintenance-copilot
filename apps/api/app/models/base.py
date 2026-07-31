@@ -1,24 +1,28 @@
 """模型基类、混入与全局枚举。"""
+
 from __future__ import annotations
 
-import enum
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.db.session import Base
-
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class TimestampMixin:
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=_utcnow
+    )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), default=_utcnow, onupdate=_utcnow
+        DateTime(timezone=True),
+        server_default=func.now(),
+        default=_utcnow,
+        onupdate=_utcnow,
     )
 
 
@@ -30,55 +34,60 @@ class AuditMixin(TimestampMixin):
 # ---------------- 枚举 ----------------
 
 
-class RoleEnum(str, enum.Enum):
+class RoleEnum(StrEnum):
     admin = "admin"
     supervisor = "supervisor"
     technician = "technician"
 
 
-class EquipmentStatusEnum(str, enum.Enum):
+class EquipmentStatusEnum(StrEnum):
     running = "running"
+    idle = "idle"
+    warning = "warning"
     fault = "fault"
+    maintenance = "maintenance"
+    offline = "offline"
+    # 兼容升级前已有数据与 API。
     under_repair = "under_repair"
     stopped = "stopped"
     scrapped = "scrapped"
 
 
-class RiskLevelEnum(str, enum.Enum):
+class RiskLevelEnum(StrEnum):
     low = "low"
     medium = "medium"
     high = "high"
     critical = "critical"
 
 
-class UrgencyEnum(str, enum.Enum):
+class UrgencyEnum(StrEnum):
     low = "low"
     medium = "medium"
     high = "high"
     critical = "critical"
 
 
-class FaultReportStatusEnum(str, enum.Enum):
+class FaultReportStatusEnum(StrEnum):
     pending = "pending"
     converted = "converted"
     closed = "closed"
 
 
-class WorkOrderTypeEnum(str, enum.Enum):
+class WorkOrderTypeEnum(StrEnum):
     fault_repair = "fault_repair"
     preventive = "preventive"
     inspection = "inspection"
     temporary = "temporary"
 
 
-class PriorityEnum(str, enum.Enum):
+class PriorityEnum(StrEnum):
     P1 = "P1"
     P2 = "P2"
     P3 = "P3"
     P4 = "P4"
 
 
-class WorkOrderStatusEnum(str, enum.Enum):
+class WorkOrderStatusEnum(StrEnum):
     pending_dispatch = "pending_dispatch"
     assigned = "assigned"
     accepted = "accepted"
@@ -90,7 +99,7 @@ class WorkOrderStatusEnum(str, enum.Enum):
     paused = "paused"
 
 
-class MaintenanceLogTypeEnum(str, enum.Enum):
+class MaintenanceLogTypeEnum(StrEnum):
     inspect = "inspect"
     diagnose = "diagnose"
     repair = "repair"
@@ -99,7 +108,7 @@ class MaintenanceLogTypeEnum(str, enum.Enum):
     note = "note"
 
 
-class KnowledgeCategoryEnum(str, enum.Enum):
+class KnowledgeCategoryEnum(StrEnum):
     manual = "manual"
     sop = "sop"
     safety = "safety"
@@ -108,7 +117,7 @@ class KnowledgeCategoryEnum(str, enum.Enum):
     experience = "experience"
 
 
-class AIInteractionTypeEnum(str, enum.Enum):
+class AIInteractionTypeEnum(StrEnum):
     parse_fault = "parse_fault"
     diagnose = "diagnose"
     rewrite_log = "rewrite_log"
@@ -117,7 +126,7 @@ class AIInteractionTypeEnum(str, enum.Enum):
     history_summary = "history_summary"
 
 
-class AIStatusEnum(str, enum.Enum):
+class AIStatusEnum(StrEnum):
     success = "success"
     failed = "failed"
     mock = "mock"

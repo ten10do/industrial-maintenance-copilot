@@ -1,10 +1,6 @@
 """应用配置：通过环境变量注入，未配置时使用安全默认值。"""
-from __future__ import annotations
 
-import os
-from functools import lru_cache
-from pathlib import Path
-from typing import List
+from __future__ import annotations
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,7 +10,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    APP_NAME: str = "Industrial Maintenance Copilot"
+    APP_NAME: str = "AI-Powered Industrial Intelligent Maintenance Platform"
     APP_ENV: str = "development"
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
@@ -22,6 +18,7 @@ class Settings(BaseSettings):
 
     # 数据库：留空默认 SQLite，保证本机可零配置启动
     DATABASE_URL: str = ""
+    REDIS_URL: str = ""
 
     # 认证
     SECRET_KEY: str = "change-this-to-a-random-secret-key-in-production"
@@ -63,7 +60,7 @@ class Settings(BaseSettings):
         return "sqlite:///./maintenance.db"
 
     @property
-    def cors_origins(self) -> List[str]:
+    def cors_origins(self) -> list[str]:
         origins = [self.FRONTEND_URL]
         # 开发环境额外放行常见本地端口
         if self.APP_ENV == "development":

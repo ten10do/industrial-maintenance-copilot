@@ -1,4 +1,5 @@
 """设备、设备类型、故障代码、备件 schema。"""
+
 from __future__ import annotations
 
 from datetime import date, datetime
@@ -33,6 +34,9 @@ class EquipmentBase(BaseModel):
     commissioning_date: date | None = None
     status: EquipmentStatusEnum = EquipmentStatusEnum.running
     risk_level: RiskLevelEnum = RiskLevelEnum.medium
+    health_score: float = 100.0
+    rated_parameters: dict | None = None
+    cumulative_runtime_hours: float = 0.0
     responsible_person_id: int | None = None
     remarks: str | None = None
 
@@ -53,14 +57,19 @@ class EquipmentUpdate(BaseModel):
     commissioning_date: date | None = None
     status: EquipmentStatusEnum | None = None
     risk_level: RiskLevelEnum | None = None
+    health_score: float | None = None
+    rated_parameters: dict | None = None
+    cumulative_runtime_hours: float | None = None
     responsible_person_id: int | None = None
     last_maintenance_at: date | None = None
+    next_maintenance_at: date | None = None
     remarks: str | None = None
 
 
 class EquipmentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    asset_uuid: str
     code: str
     name: str
     equipment_type_id: int | None = None
@@ -74,9 +83,13 @@ class EquipmentOut(BaseModel):
     commissioning_date: date | None = None
     status: EquipmentStatusEnum
     risk_level: RiskLevelEnum
+    health_score: float
+    rated_parameters: dict | None = None
+    cumulative_runtime_hours: float
     responsible_person_id: int | None = None
     responsible_person_name: str | None = None
     last_maintenance_at: date | None = None
+    next_maintenance_at: date | None = None
     qr_token: str
     remarks: str | None = None
     created_at: datetime | None = None

@@ -1,10 +1,11 @@
 """设备台账、设备类型、故障代码、备件接口。"""
+
 from __future__ import annotations
 
 import io
 
 import qrcode
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,7 @@ from app.core.exceptions import conflict, not_found, paginate
 from app.db.session import get_db
 from app.models.equipment import Equipment, EquipmentType, FaultCode, SparePart
 from app.models.user import User
-from app.schemas.common import OkResponse, PageOut
+from app.schemas.common import PageOut
 from app.schemas.equipment import (
     EquipmentCreate,
     EquipmentOut,
@@ -40,6 +41,7 @@ def _to_out(db: Session, eq: Equipment) -> EquipmentOut:
         resp_name = u.full_name if u else None
     return EquipmentOut(
         id=eq.id,
+        asset_uuid=eq.asset_uuid,
         code=eq.code,
         name=eq.name,
         equipment_type_id=eq.equipment_type_id,
@@ -53,9 +55,13 @@ def _to_out(db: Session, eq: Equipment) -> EquipmentOut:
         commissioning_date=eq.commissioning_date,
         status=eq.status,
         risk_level=eq.risk_level,
+        health_score=eq.health_score,
+        rated_parameters=eq.rated_parameters,
+        cumulative_runtime_hours=eq.cumulative_runtime_hours,
         responsible_person_id=eq.responsible_person_id,
         responsible_person_name=resp_name,
         last_maintenance_at=eq.last_maintenance_at,
+        next_maintenance_at=eq.next_maintenance_at,
         qr_token=eq.qr_token,
         remarks=eq.remarks,
         created_at=eq.created_at,
@@ -75,7 +81,9 @@ def list_equipment(
 ):
     q = db.query(Equipment)
     if keyword:
-        q = q.filter(Equipment.name.contains(keyword) | Equipment.code.contains(keyword))
+        q = q.filter(
+            Equipment.name.contains(keyword) | Equipment.code.contains(keyword)
+        )
     if status:
         q = q.filter(Equipment.status == status)
     if equipment_type_id:
@@ -83,11 +91,20 @@ def list_equipment(
     if plant:
         q = q.filter(Equipment.plant == plant)
     items, total = paginate(q, page, page_size)
-    return PageOut(items=[_to_out(db, e) for e in items], total=total, page=page, page_size=page_size)
+    return PageOut(
+        items=[_to_out(db, e) for e in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("", response_model=EquipmentOut)
-def create_equipment(payload: EquipmentCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def create_equipment(
+    payload: EquipmentCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     import uuid
 
     if db.query(Equipment).filter(Equipment.code == payload.code).first():
@@ -104,7 +121,9 @@ def create_equipment(payload: EquipmentCreate, db: Session = Depends(get_db), us
 
 
 @router.get("/{eq_id}", response_model=EquipmentOut)
-def get_equipment(eq_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_equipment(
+    eq_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
+):
     eq = db.get(Equipment, eq_id)
     if not eq:
         raise not_found("设备不存在")
@@ -112,7 +131,12 @@ def get_equipment(eq_id: int, db: Session = Depends(get_db), _=Depends(get_curre
 
 
 @router.put("/{eq_id}", response_model=EquipmentOut)
-def update_equipment(eq_id: int, payload: EquipmentUpdate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def update_equipment(
+    eq_id: int,
+    payload: EquipmentUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     eq = db.get(Equipment, eq_id)
     if not eq:
         raise not_found("设备不存在")
@@ -125,10 +149,18 @@ def update_equipment(eq_id: int, payload: EquipmentUpdate, db: Session = Depends
 
 
 @router.get("/{eq_id}/work-orders")
-def equipment_work_orders(eq_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def equipment_work_orders(
+    eq_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
+):
     from app.models.workorder import WorkOrder
 
-    wos = db.query(WorkOrder).filter(WorkOrder.equipment_id == eq_id).order_by(WorkOrder.created_at.desc()).limit(100).all()
+    wos = (
+        db.query(WorkOrder)
+        .filter(WorkOrder.equipment_id == eq_id)
+        .order_by(WorkOrder.created_at.desc())
+        .limit(100)
+        .all()
+    )
     return [
         {
             "id": w.id,
@@ -174,7 +206,11 @@ def list_types(db: Session = Depends(get_db), _=Depends(get_current_user)):
 
 
 @types_router.post("", response_model=EquipmentTypeOut)
-def create_type(payload: EquipmentTypeCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def create_type(
+    payload: EquipmentTypeCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     t = EquipmentType(**payload.model_dump(), created_by=str(user.id))
     db.add(t)
     db.commit()
@@ -192,7 +228,11 @@ def list_fault_codes(db: Session = Depends(get_db), _=Depends(get_current_user))
 
 
 @fault_codes_router.post("", response_model=FaultCodeOut)
-def create_fault_code(payload: FaultCodeCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def create_fault_code(
+    payload: FaultCodeCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     fc = FaultCode(**payload.model_dump())
     db.add(fc)
     db.commit()
@@ -210,7 +250,11 @@ def list_spare_parts(db: Session = Depends(get_db), _=Depends(get_current_user))
 
 
 @spare_parts_router.post("", response_model=SparePartOut)
-def create_spare_part(payload: SparePartCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def create_spare_part(
+    payload: SparePartCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     sp = SparePart(**payload.model_dump())
     db.add(sp)
     db.commit()

@@ -1,4 +1,5 @@
 """v1 路由聚合。"""
+
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
@@ -8,6 +9,7 @@ from app.api.v1.endpoints import (
     equipment,
     fault_reports,
     files,
+    intelligence,
     knowledge,
     users,
     work_orders,
@@ -24,5 +26,6 @@ api_router.include_router(fault_reports.router)
 api_router.include_router(work_orders.router)
 api_router.include_router(copilot.router)
 api_router.include_router(knowledge.router)
+api_router.include_router(intelligence.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(files.router)
