@@ -21,6 +21,7 @@ export interface ApiErrorBody {
   code?: string;
   message?: string;
   work_order_id?: number;
+  missing_requirements?: string[];
 }
 
 export class ApiError extends Error {
@@ -78,6 +79,13 @@ export const KNOWLEDGE_CATEGORY_LABELS: Record<string, string> = {
   fault_code: '故障代码', experience: '维护经验',
 };
 
+export const CHECKLIST_CATEGORY_LABELS: Record<string, string> = {
+  safety: '安全检查',
+  diagnosis: '故障诊断',
+  repair: '维修执行',
+  testing: '功能测试',
+};
+
 export interface Citation {
   source_type: string;
   source_id: number;
@@ -94,4 +102,134 @@ export interface AskResult {
   warnings: string[];
   is_mock: boolean;
   disclaimer: string;
+}
+
+// ---- Work Order types ----
+
+export interface ChecklistItem {
+  id: number;
+  work_order_id: number;
+  category: string;
+  content: string;
+  order: number;
+  is_required: boolean;
+  is_completed: boolean;
+  remark?: string;
+  completed_at?: string;
+  completed_by?: number;
+}
+
+export interface MaintenanceLog {
+  id: number;
+  work_order_id: number;
+  log_type: LogType;
+  content: string;
+  raw_content?: string;
+  ai_polished?: string;
+  photos?: string[];
+  operator_id?: number;
+  operator_name?: string;
+  logged_at?: string;
+  created_at?: string;
+}
+
+export interface LaborEntry {
+  id: number;
+  work_order_id: number;
+  started_at?: string;
+  ended_at?: string;
+  hours: number;
+  is_downtime: boolean;
+  operator_id?: number;
+  operator_name?: string;
+  remark?: string;
+}
+
+export interface SparePartUsage {
+  id: number;
+  work_order_id: number;
+  spare_part_id?: number;
+  spare_part_code?: string;
+  spare_part_name?: string;
+  quantity: number;
+  unit: string;
+  remark?: string;
+}
+
+export interface StatusHistoryEntry {
+  id: number;
+  from_status?: string;
+  to_status: string;
+  changed_by?: number;
+  changed_at?: string;
+  remark?: string;
+}
+
+export interface WorkOrder {
+  id: number;
+  code: string;
+  title: string;
+  equipment_id?: number;
+  equipment_name?: string;
+  equipment_code?: string;
+  fault_report_id?: number;
+  fault_description?: string;
+  fault_code_id?: number;
+  fault_code?: string;
+  order_type: string;
+  priority: Priority;
+  status: WorkOrderStatus;
+  created_by_id?: number;
+  creator_name?: string;
+  assignee_id?: number;
+  assignee_name?: string;
+  planned_start_at?: string;
+  planned_end_at?: string;
+  actual_start_at?: string;
+  actual_end_at?: string;
+  safety_risk?: string;
+  ai_diagnosis_summary?: string;
+  maintenance_steps?: unknown[];
+  acceptance_criteria?: string;
+  root_cause?: string;
+  action_taken?: string;
+  replaced_parts?: string;
+  test_result?: string;
+  equipment_status_after?: string;
+  follow_up_advice?: string;
+  needs_observation: boolean;
+  completion_photos?: string[];
+  rejection_reason?: string;
+  submitted_at?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WorkOrderDetail extends WorkOrder {
+  checklist_items: ChecklistItem[];
+  logs: MaintenanceLog[];
+  labor_entries: LaborEntry[];
+  spare_parts: SparePartUsage[];
+  status_history: StatusHistoryEntry[];
+}
+
+export interface CompletionValidationError {
+  code: string;
+  message: string;
+  missing_requirements: string[];
+}
+
+export interface ReportSection {
+  title: string;
+  content: string;
+}
+
+export interface WorkOrderReport {
+  work_order_id: number;
+  work_order_code: string;
+  summary: string;
+  sections: ReportSection[];
+  generation_method: string;
+  version: number;
+  is_mock: boolean;
 }

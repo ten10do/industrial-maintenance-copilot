@@ -17,12 +17,21 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    if (body && typeof body === 'object' && body.detail) {
-      const detail = body.detail;
-      if (typeof detail === 'object') {
-        throw new ApiError(res.status, detail);
+    if (body && typeof body === 'object') {
+      // 处理 FastAPI HTTPException detail 格式
+      if (body.detail) {
+        const detail = body.detail;
+        if (typeof detail === 'object') {
+          throw new ApiError(res.status, detail);
+        }
+        throw new ApiError(res.status, detail as string);
       }
-      throw new ApiError(res.status, detail as string);
+      // 处理自定义 JSONResponse (如完工校验错误)
+      if (body.missing_requirements) {
+        const err = new ApiError(res.status, body.message || '请求失败');
+        (err as any).response = { data: body };
+        throw err;
+      }
     }
     throw new ApiError(res.status, `HTTP ${res.status}`);
   }
@@ -109,6 +118,48 @@ export async function addLaborEntry(woId: number, data: any) {
 }
 export async function addSparePartUsage(woId: number, data: any) {
   return request<any>(`/work-orders/${woId}/spare-parts`, { method: 'POST', body: JSON.stringify(data) });
+}
+
+// Work Orders - Update/Delete for logs, labor, spare-parts
+export async function updateMaintenanceLog(woId: number, logId: number, data: any) {
+  return request<any>(`/work-orders/${woId}/logs/${logId}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+export async function updateLaborEntry(woId: number, entryId: number, data: any) {
+  return request<any>(`/work-orders/${woId}/labor/${entryId}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+export async function deleteLaborEntry(woId: number, entryId: number) {
+  return request<any>(`/work-orders/${woId}/labor/${entryId}`, { method: 'DELETE' });
+}
+export async function updateSparePartUsage(woId: number, recordId: number, data: any) {
+  return request<any>(`/work-orders/${woId}/spare-parts/${recordId}`, { method: 'PUT', body: JSON.stringify(data) });
+}
+export async function deleteSparePartUsage(woId: number, recordId: number) {
+  return request<any>(`/work-orders/${woId}/spare-parts/${recordId}`, { method: 'DELETE' });
+}
+
+// Work Orders - Reports
+export async function getWorkOrderReport(woId: number) {
+  return request<any>(`/work-orders/${woId}/report`);
+}
+export async function regenerateWorkOrderReport(woId: number) {
+  return request<any>(`/work-orders/${woId}/report/regenerate`, { method: 'POST' });
+}
+
+// Work Orders - Attachments
+export async function addAttachment(woId: number, file: File) {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetch(`${BASE}/work-orders/${woId}/attachments`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new ApiError(res.status, body?.detail || `HTTP ${res.status}`);
+  }
+  return res.json();
 }
 
 // Copilot
