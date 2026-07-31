@@ -248,7 +248,6 @@ jobs:
         run: |
           mkdir -p .next/standalone/.next
           cp -r .next/static .next/standalone/.next/static
-          cp -r public .next/standalone/public
           HOSTNAME=127.0.0.1 PORT=3000 node .next/standalone/server.js > "$RUNNER_TEMP/web.log" 2>&1 &
           for i in {1..40}; do
             if curl -fsS http://127.0.0.1:3000/login >/dev/null; then exit 0; fi
