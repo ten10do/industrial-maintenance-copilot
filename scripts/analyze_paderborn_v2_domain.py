@@ -263,6 +263,9 @@ def _standardized_mean_difference(
 
 def _markdown(result: dict[str, Any]) -> str:
     distributions = result["distributions"]
+    pca = result["pca"]
+    eta = pca["eta_squared"]
+    overlap = result["healthy_damaged_overlap"]
     lines = [
         "# Paderborn V2 Development-only Domain Analysis",
         "",
@@ -290,7 +293,6 @@ def _markdown(result: dict[str, Any]) -> str:
             f"| {feature} | {metrics['direction_invariant_auc']:.4f} | "
             f"{metrics['standardized_mean_difference']:.4f} |"
         )
-    pca = result["pca"]
     lines.extend(
         [
             "",
@@ -306,6 +308,30 @@ def _markdown(result: dict[str, Any]) -> str:
             f"- Bearing identity eta²: `{pca['eta_squared']['bearing_identity']}`",
             f"- Operating condition eta²: `{pca['eta_squared']['operating_condition']}`",
             f"- Damage origin eta²: `{pca['eta_squared']['damage_origin']}`",
+            "",
+            "## Quantitative interpretation",
+            "",
+            (
+                f"- RMS alone has direction-invariant AUC "
+                f"{overlap['rms']['direction_invariant_auc']:.4f}, which is close to random "
+                "and confirms substantial healthy/damaged overlap."
+            ),
+            (
+                f"- Spectral centroid is the strongest audited univariate separator "
+                f"(AUC {overlap['spectral_centroid_hz']['direction_invariant_auc']:.4f}), "
+                "but a univariate Development effect is not cross-bearing proof."
+            ),
+            (
+                f"- Mean PC1–PC3 eta² is bearing={np.mean(eta['bearing_identity']):.4f}, "
+                f"condition={np.mean(eta['operating_condition']):.4f}, and "
+                f"damage-origin={np.mean(eta['damage_origin']):.4f}. Bearing identity is the "
+                "dominant factor, so identity/domain learning is a material generalization risk."
+            ),
+            (
+                "- Operating condition contributes measurable variance (especially PC1), so "
+                "fold-local condition normalization is justified but cannot by itself remove "
+                "bearing-specific shift."
+            ),
             "",
             "## Channel audit",
             "",
