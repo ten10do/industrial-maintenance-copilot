@@ -30,6 +30,7 @@ from download_paderborn_dataset import (  # noqa: E402
     parse_official_listing,
     verify_official_listing,
 )
+from generate_paderborn_v2_folds import build_manifest as build_v2_folds  # noqa: E402
 from prepare_bearing_dataset import ProcessedRow, write_processed  # noqa: E402
 
 
@@ -47,6 +48,67 @@ def test_paderborn_listing_requires_the_exact_official_archive_set() -> None:
 
     verify_official_listing(parsed)
     assert set(parsed) == set(EXPECTED_BEARINGS)
+
+
+def test_paderborn_v2_fold_manifest_is_deterministic_and_excludes_test(
+    tmp_path: Path,
+) -> None:
+    split = tmp_path / "split.json"
+    split.write_text(
+        json.dumps(
+            {
+                "train": [f"H{index}" for index in range(4)]
+                + [f"A{index}" for index in range(8)],
+                "validation": ["H4", "A8", "A9"],
+                "test": ["T0", "T1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    labels = tmp_path / "labels.csv"
+    with labels.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=["bearing_id", "fault_class", "damage_origin"],
+        )
+        writer.writeheader()
+        for index in range(5):
+            writer.writerow(
+                {
+                    "bearing_id": f"H{index}",
+                    "fault_class": "healthy",
+                    "damage_origin": "healthy",
+                }
+            )
+        for index in range(10):
+            writer.writerow(
+                {
+                    "bearing_id": f"A{index}",
+                    "fault_class": "inner_ring" if index % 2 else "outer_ring",
+                    "damage_origin": "artificial" if index < 5 else "real",
+                }
+            )
+        for bearing_id in ("T0", "T1"):
+            writer.writerow(
+                {
+                    "bearing_id": bearing_id,
+                    "fault_class": "outer_ring",
+                    "damage_origin": "real",
+                }
+            )
+
+    first = build_v2_folds(split, labels)
+    second = build_v2_folds(split, labels)
+
+    assert first == second
+    validations = [bearing for fold in first["folds"] for bearing in fold["validation"]]
+    assert sorted(validations) == sorted(first["development_bearings"])
+    assert len(validations) == len(set(validations))
+    assert not set(validations) & {"T0", "T1"}
+    assert all(
+        fold["validation_distribution"]["damage_origin"].get("healthy") == 1
+        for fold in first["folds"]
+    )
 
 
 def test_paderborn_download_resumes_to_an_atomic_destination(tmp_path: Path) -> None:
