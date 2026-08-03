@@ -180,6 +180,29 @@ def test_paderborn_channel_falls_back_to_strict_mat5_reader(
     np.testing.assert_array_equal(signal, np.asarray([1.0, -2.0, 3.5]))
 
 
+def test_paderborn_fallback_returns_an_early_named_channel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "fixture.mat"
+    channels = np.empty((1, 2), dtype=[("Name", "O"), ("Data", "O")])
+    channels["Name"][0, 0] = "phase_current_1"
+    channels["Data"][0, 0] = np.asarray([0.1, 0.2, 0.3])
+    channels["Name"][0, 1] = "vibration_1"
+    channels["Data"][0, 1] = np.asarray([1.0, 2.0, 3.0])
+    root = np.empty((1, 1), dtype=[("Y", "O")])
+    root["Y"][0, 0] = channels
+    savemat(path, {path.stem: root}, do_compression=False)
+
+    def fail_general_decode(*args: object, **kwargs: object) -> None:
+        raise TypeError("fixture general-reader failure")
+
+    monkeypatch.setattr(dataset_preparation, "loadmat", fail_general_decode)
+
+    signal = dataset_preparation._load_paderborn_channel(path, "phase_current_1")
+
+    np.testing.assert_allclose(signal, np.asarray([0.1, 0.2, 0.3]))
+
+
 def test_paderborn_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> None:
     raw_dir = tmp_path / "raw"
     archive = raw_dir / "_archives" / "K001.rar"

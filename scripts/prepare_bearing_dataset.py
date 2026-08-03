@@ -24,8 +24,8 @@ from scipy.io import loadmat
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
-from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features  # noqa: E402
-from app.ml.types import FeatureVector, TelemetryWindow  # noqa: E402
+from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features
+from app.ml.types import FeatureVector, TelemetryWindow
 
 _STRING_DTYPES = {
     "target": "<U64",
@@ -509,25 +509,20 @@ def _load_mat5_named_y_channel(path: Path, signal_key: str) -> np.ndarray[Any, A
 
         fields = _read_mat5_struct_fields(y_matrix.stream, endian)
         entry_count = int(np.prod(y_matrix.dimensions))
-        match: np.ndarray[Any, Any] | None = None
-        for entry_index in range(entry_count):
+        for _ in range(entry_count):
             channel_name = ""
             for field in fields:
                 child = _open_mat5_matrix(y_matrix.stream, endian)
                 if field == "Name":
                     channel_name = _read_mat5_char(child, endian)
                 elif field == "Data" and _channel_matches(channel_name, signal_key):
-                    if match is not None:
-                        raise ValueError(f"duplicate channel {signal_key!r}")
-                    match = _read_mat5_numeric(child, endian)
-                    # The affected official file ends with zero-filled optional
-                    # metadata after the final channel's complete numeric data.
-                    if entry_index == entry_count - 1:
-                        return match
+                    # Return the complete, exactly named channel before parsing
+                    # unrelated trailing optional metadata. One official KA08
+                    # file has zero-filled tail metadata after otherwise intact
+                    # high-rate vibration and phase-current arrays.
+                    return _read_mat5_numeric(child, endian)
                 y_matrix.stream.seek(child.next_position)
-        if match is None:
-            raise ValueError(f"channel {signal_key!r} was not found")
-        return match
+        raise ValueError(f"channel {signal_key!r} was not found")
 
 
 def _open_mat5_matrix(stream: BinaryIO, endian: str) -> _Mat5Matrix:
