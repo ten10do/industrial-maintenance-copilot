@@ -63,6 +63,7 @@ class Candidate:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--processed", type=Path, required=True)
+    parser.add_argument("--outer-manifest", type=Path, required=True)
     parser.add_argument("--runs-dir", type=Path, required=True)
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
@@ -71,19 +72,30 @@ def main() -> None:
     dataset = V2Dataset.load(args.processed, expected_dataset="xjtu-sy")
     unique_groups = sorted(set(dataset.groups.tolist()))
     if len(unique_groups) != 15:
-        raise ValueError("XJTU V2 LOBO requires all 15 Development bearings")
+        raise ValueError("XJTU V2 requires all 15 Development bearings")
+    outer_manifest = _read_json(args.outer_manifest)
+    if outer_manifest.get("source_processed_sha256") != dataset.processed_sha256:
+        raise ValueError("XJTU outer manifest does not match the processed dataset")
+    outer_folds = _outer_folds(dataset, outer_manifest)
     git_sha = _git_sha()
     args.runs_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     for family in FAMILIES:
-        output = args.runs_dir / f"rul-{family.lower()}-lobo.json"
+        output = args.runs_dir / f"rul-{family.lower()}-grouped-5fold.json"
         existing = _resumable_result(output, git_sha, dataset)
         if existing is not None:
             print(f"resume {family}")
             results.append(existing)
             continue
-        print(f"run {family} LOBO")
-        result = _evaluate_family(dataset, family, unique_groups, git_sha, args.jobs)
+        print(f"run {family} grouped five-fold outer CV")
+        result = _evaluate_family(
+            dataset,
+            family,
+            outer_folds,
+            args.outer_manifest,
+            git_sha,
+            args.jobs,
+        )
         output.write_text(
             json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
@@ -93,7 +105,8 @@ def main() -> None:
         "research_scope": "XJTU-SY 15-bearing Development Dataset",
         "evaluation_name": "Cross-Bearing Generalization Estimate",
         "unbiased_final_test": False,
-        "protocol": "15-fold Leave-One-Bearing-Out outer; grouped 3-fold inner",
+        "protocol": "fixed condition-balanced 5-fold grouped outer; grouped 3-fold inner",
+        "outer_manifest": args.outer_manifest.as_posix(),
         "dataset_version": dataset.dataset_version,
         "feature_version": "bearing-features-v2",
         "processed_sha256": dataset.processed_sha256,
@@ -114,7 +127,8 @@ def main() -> None:
 def _evaluate_family(
     dataset: V2Dataset,
     family: RulFamily,
-    unique_groups: list[str],
+    outer_folds: list[tuple[str, NDArray[np.int_], NDArray[np.int_]]],
+    outer_manifest_path: Path,
     git_sha: str,
     jobs: int,
 ) -> dict[str, Any]:
@@ -127,10 +141,11 @@ def _evaluate_family(
     importance_records: list[dict[str, float]] = []
     local_records: list[dict[str, Any]] = []
     candidates = _candidates()
-    for outer_number, held_out in enumerate(unique_groups, start=1):
-        print(f"  {family} outer {outer_number}/15 held-out={held_out}")
-        outer_validation = np.flatnonzero(dataset.groups == held_out)
-        outer_train = np.flatnonzero(dataset.groups != held_out)
+    for outer_number, (fold_id, outer_train, outer_validation) in enumerate(
+        outer_folds, start=1
+    ):
+        held_out = sorted(set(dataset.groups[outer_validation].tolist()))
+        print(f"  {family} outer {outer_number}/5 held-out={held_out}")
         inner_relative = grouped_condition_folds(
             dataset.groups[outer_train], dataset.conditions[outer_train]
         )
@@ -204,12 +219,13 @@ def _evaluate_family(
         )
         local_records.append(
             _local_contributors(
-                estimator, transformed_validation[0], feature_names, held_out
+                estimator, transformed_validation[0], feature_names, ",".join(held_out)
             )
         )
         outer_records.append(
             {
-                "held_out_bearing": held_out,
+                "fold_id": fold_id,
+                "held_out_bearings": held_out,
                 "selected_algorithm": selected_candidate.algorithm,
                 "selected_hyperparameters": selected_candidate.hyperparameters,
                 "inner_selected_metrics": {
@@ -239,7 +255,7 @@ def _evaluate_family(
         {key: value for key, value in raw_stability.items() if key != "per_bearing"}
     )
     smoothed = np.empty_like(oof)
-    for group in unique_groups:
+    for group in sorted(set(dataset.groups.tolist())):
         indices = np.flatnonzero(dataset.groups == group)
         indices = indices[np.argsort(dataset.sequence_indices[indices])]
         smoothed[indices] = causal_ewma(oof[indices])
@@ -254,12 +270,12 @@ def _evaluate_family(
     )
     uncertainty = _uncertainty_summary(targets, lower, upper)
     return {
-        "experiment_id": f"rul-{family.lower()}-nested-lobo",
+        "experiment_id": f"rul-{family.lower()}-nested-grouped-5fold",
         "dataset_version": dataset.dataset_version,
         "processed_sha256": dataset.processed_sha256,
         "feature_version": "bearing-features-v2",
         "feature_family": family,
-        "fold_manifest": "deterministic LOBO outer + condition-balanced grouped 3-fold inner",
+        "fold_manifest": outer_manifest_path.as_posix(),
         "algorithm": "nested candidate selection",
         "hyperparameters": "preregistered finite grids",
         "seed": SEED,
@@ -455,6 +471,27 @@ def _select(results: list[dict[str, Any]]) -> dict[str, Any]:
         "global_permutation_importance": selected["global_permutation_importance"][:20],
         "experiment_id": selected["experiment_id"],
     }
+
+
+def _outer_folds(
+    dataset: V2Dataset, manifest: dict[str, Any]
+) -> list[tuple[str, NDArray[np.int_], NDArray[np.int_]]]:
+    result = []
+    seen: list[str] = []
+    for fold in manifest["folds"]:
+        train = np.flatnonzero(np.isin(dataset.groups, fold["train"]))
+        validation = np.flatnonzero(np.isin(dataset.groups, fold["validation"]))
+        train_groups = set(dataset.groups[train].tolist())
+        validation_groups = set(dataset.groups[validation].tolist())
+        if train_groups & validation_groups:
+            raise ValueError("bearing leakage in fixed XJTU outer fold")
+        if train_groups | validation_groups != set(dataset.groups.tolist()):
+            raise ValueError("XJTU outer fold does not partition all bearings")
+        seen.extend(validation_groups)
+        result.append((str(fold["fold_id"]), train, validation))
+    if len(result) != 5 or sorted(seen) != sorted(set(dataset.groups.tolist())):
+        raise ValueError("each XJTU bearing must be outer validation exactly once")
+    return result
 
 
 def _resumable_result(
