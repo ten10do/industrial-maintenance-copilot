@@ -1,6 +1,6 @@
 {
   "dataset_name": "xjtu-sy",
-  "version": "author-repository-accessed-2026-08-03",
+  "version": "xjtu-sy-snapshot-6364ef9cb50663c5",
   "source_url": "https://github.com/WangBiaoXJTU/xjtu-sy-bearing-datasets",
   "author_dataset_page_url": "https://biaowang.tech/xjtu-sy-bearing-datasets/",
   "source_type": "author_repository",
@@ -9,9 +9,9 @@
   "citation": "Wang, B.; Lei, Y.; Li, N.; Li, N. (2020). A Hybrid Prognostics Approach for Estimating Remaining Useful Life of Rolling Element Bearings. IEEE Transactions on Reliability, 69(1), 401-412. doi:10.1109/TR.2018.2882682.",
   "publication_url": "https://doi.org/10.1109/TR.2018.2882682",
   "download_mode": "manual_author_repository",
-  "downloaded_at": null,
-  "sha256": null,
-  "raw_files": 0,
+  "downloaded_at": "2026-08-03T07:54:00.7174475Z",
+  "sha256": "646f7f356be04e06c1e6d6e3589e65352c41e7da1d439735f903d811404cc4e1",
+  "raw_files": 9216,
   "processed_version": "bearing-processed-v1",
   "feature_schema_version": "bearing-features-v1",
   "verified_metadata": {
@@ -21,12 +21,67 @@
     "samples_per_acquisition": 32768,
     "acquisition_duration_seconds": 1.28,
     "acquisition_interval_seconds": 60,
-    "channels": ["horizontal_vibration", "vertical_vibration"],
+    "channels": [
+      "horizontal_vibration",
+      "vertical_vibration"
+    ],
     "operating_conditions": [
-      {"speed_rpm": 2100, "radial_force_kn": 12},
-      {"speed_rpm": 2250, "radial_force_kn": 11},
-      {"speed_rpm": 2400, "radial_force_kn": 10}
+      {
+        "speed_rpm": 2100,
+        "radial_force_kn": 12
+      },
+      {
+        "speed_rpm": 2250,
+        "radial_force_kn": 11
+      },
+      {
+        "speed_rpm": 2400,
+        "radial_force_kn": 10
+      }
     ]
   },
-  "notes": "No dataset file or derived sample is redistributed. The final recorded acquisition is used as the observable run endpoint; this assumption must be reported with any trained RUL model."
+  "notes": "No dataset file or derived sample is redistributed. The final recorded acquisition is used as the observable run endpoint; this assumption must be reported with any trained RUL model.",
+  "version_derivation": "sha256(verified download manifest + processing config)",
+  "version_digest": "6364ef9cb50663c5b05b40f3a4ddb3da5b8cd3aa76abbb583a3afeef2b77bd31",
+  "archive_hashes": [
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part01.rar",
+      "size_bytes": 744488960,
+      "sha256": "c500657353f089a4ab50212ff4ddfc7b982729e92e2b127440c8ad881d80b968"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part02.rar",
+      "size_bytes": 744488960,
+      "sha256": "4dfa6286a8e9c7cec1e925b347642349f36e27ab3f703c90d1d08977b7b4f61f"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part03.rar",
+      "size_bytes": 744488960,
+      "sha256": "6929f531284f79e0209246b4ee23b23dd8d4faac1c0c3ff8fb131cda4a18bd3a"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part04.rar",
+      "size_bytes": 744488960,
+      "sha256": "2245825acd29bed3b95e7a77879a3fbadf20f4ad4f99486384c714174621597d"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part05.rar",
+      "size_bytes": 744488960,
+      "sha256": "e1b0a41a32b865e48ea7981c56f952a960d94335f3496b72eb4a65932f1671bd"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part06.rar",
+      "size_bytes": 722155640,
+      "sha256": "df1854821a9d481104476379f7bc045ea1e101427c6e36145cd7677dc7c4a684"
+    }
+  ],
+  "bearing_count": 15,
+  "processing_config": "configs/ml/rul_v1.yaml",
+  "processing_config_sha256": "3fc2f1b0a2d4c2bf35327fe1ae7198133a57d44937e2b59b9ee3cb0abf1fbd1b",
+  "split_manifest": "data/manifests/xjtu-rul-split-v1.json",
+  "split_manifest_sha256": "628d5a1b57c1b27564eac91216d225f5622bb2f8252aa697b32cd4c039e79f8b",
+  "download_manifest": "data/manifests/xjtu-sy-real-download.json",
+  "download_manifest_sha256": "24a7ccb66cf0d1bbc4534f931cafeb5ca9775f57facf30c7b56e9bcaa4e59f11",
+  "git_sha": "1eaa18b41007a35a92fc1a496fc23cf2b20c7eec",
+  "snapshot_created_at": "2026-08-03T08:51:13.014904+00:00"
 }
