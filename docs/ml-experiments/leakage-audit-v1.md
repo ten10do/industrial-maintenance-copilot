@@ -37,3 +37,4 @@ This report was generated before formal model training. Test metrics were not in
 - Condition distribution: `{'train': {'35Hz12kN': 371, '37.5Hz11kN': 1033, '40Hz10kN': 2981}, 'validation': {'35Hz12kN': 123, '37.5Hz11kN': 42, '40Hz10kN': 2538}, 'test': {'35Hz12kN': 122, '37.5Hz11kN': 491, '40Hz10kN': 1515}}`
 - Errors: `[]`
 
+The audit was completed before formal training; no test metric was used to design or revise either locked split.
