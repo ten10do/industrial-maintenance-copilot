@@ -394,7 +394,7 @@ def test_snapshot_version_and_processed_lineage_are_deterministic(
     )
 
     assert audit["status"] == "PASS"
-    assert audit["identity_leakage"] is True
-    assert audit["source_leakage"] is True
+    assert audit["identity_leakage_check_passed"] is True
+    assert audit["source_leakage_check_passed"] is True
     with np.load(output, allow_pickle=False) as payload:
         assert payload["sample_ids"].tolist() == ["sample-0", "sample-1", "sample-2"]
