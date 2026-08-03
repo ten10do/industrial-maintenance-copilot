@@ -212,7 +212,7 @@ def _audit_channels(raw_dir: Path, development: frozenset[str]) -> dict[str, Any
                 for item in np.atleast_1d(root.Y)
             }
             inspected += 1
-            coverage.update(channels)
+            coverage.update(channels.keys())
             required = ("vibration_1", "phase_current_1", "phase_current_2")
             if (
                 all(name in channels for name in required)
