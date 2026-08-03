@@ -35,9 +35,10 @@ Paderborn 的 4 秒状态测量不是 run-to-failure 时间线，因此配置中
 
 ### XJTU-SY
 
+- 作者数据页：<https://biaowang.tech/xjtu-sy-bearing-datasets/>
 - 作者数据仓库：<https://github.com/WangBiaoXJTU/xjtu-sy-bearing-datasets>
 - 论文 DOI：<https://doi.org/10.1109/TR.2018.2882682>
-- 作者仓库描述 15 个轴承、3 种工况的完整 run-to-failure 数据；每分钟采集一次，
+- 作者页面描述 15 个轴承、3 种工况的完整 run-to-failure 数据；每分钟采集一次，
   25.6 kHz、1.28 秒、32768 点，含水平和垂直振动。
 - 作者仓库要求引用 Wang 等人的 IEEE Transactions on Reliability 论文。
 - 截至 2026-08-03，作者仓库没有 LICENSE 文件或明确 SPDX 条款。本项目因此不

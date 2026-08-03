@@ -2,6 +2,7 @@
   "dataset_name": "xjtu-sy",
   "version": "author-repository-accessed-2026-08-03",
   "source_url": "https://github.com/WangBiaoXJTU/xjtu-sy-bearing-datasets",
+  "author_dataset_page_url": "https://biaowang.tech/xjtu-sy-bearing-datasets/",
   "source_type": "author_repository",
   "license": "No explicit LICENSE file or SPDX terms were published in the author repository as verified on 2026-08-03; public research use and citation are requested, redistribution is not assumed",
   "license_url": null,
