@@ -73,16 +73,28 @@ def main() -> None:
         "dataset": args.dataset,
         "dataset_version": dataset_version,
         "feature_version": FEATURE_SCHEMA_VERSION_V2,
-        "window_size": args.window_size if args.dataset == "paderborn" else 32768,
-        "stride": args.stride if args.dataset == "paderborn" else 32768,
-        "paderborn_channels": [
-            "vibration_1",
-            "phase_current_1",
-            "phase_current_2",
-        ],
-        "xjtu_channels": ["horizontal", "vertical"],
-        "causal_horizons_minutes": [5, 15, 30, 60],
     }
+    if args.dataset == "paderborn":
+        processing_config.update(
+            {
+                "window_size": args.window_size,
+                "stride": args.stride,
+                "channels": [
+                    "vibration_1",
+                    "phase_current_1",
+                    "phase_current_2",
+                ],
+            }
+        )
+    else:
+        processing_config.update(
+            {
+                "window_size": 32768,
+                "stride": 32768,
+                "channels": ["horizontal", "vertical"],
+                "causal_horizons_minutes": [5, 15, 30, 60],
+            }
+        )
     config_sha = _json_sha256(processing_config)
     cache_dir = args.cache_root / args.dataset / config_sha[:16]
     if args.dataset == "paderborn":
