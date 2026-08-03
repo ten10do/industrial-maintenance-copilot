@@ -28,14 +28,15 @@ def predict(artifact: LoadedArtifact, features: FeatureVector) -> PredictionResu
     rul_hours: float | None = None
     degradation_index: float | None = None
     if task_type == "rul":
-        rul_hours = max(0.0, float(predicted_value))
+        raw_rul_hours = float(predicted_value)
+        rul_hours = max(0.0, raw_rul_hours)
         maximum_rul = artifact.metadata.get("maximum_rul_hours")
         if maximum_rul is not None and float(maximum_rul) > 0:
             degradation_index = float(
                 np.clip(1.0 - rul_hours / float(maximum_rul), 0.0, 1.0)
             )
         confidence = _regression_confidence(artifact.metrics)
-        prediction: str | float = rul_hours
+        prediction: str | float = raw_rul_hours
     else:
         probability_matrix = cast(Any, model).predict_proba(transformed)
         classes = [str(value) for value in cast(Any, model).classes_]
@@ -44,11 +45,12 @@ def predict(artifact: LoadedArtifact, features: FeatureVector) -> PredictionResu
             for name, value in zip(classes, probability_matrix[0], strict=True)
         }
         predicted_class = str(predicted_value)
-        probability = (
-            probabilities.get("1")
-            if task_type == "failure_risk"
-            else probabilities[predicted_class]
-        )
+        if task_type == "failure_risk":
+            probability = probabilities.get("1")
+        elif "healthy" in probabilities:
+            probability = 1.0 - probabilities["healthy"]
+        else:
+            probability = probabilities[predicted_class]
         confidence = max(probabilities.values())
         prediction = predicted_class
     top_features = _top_contributions(

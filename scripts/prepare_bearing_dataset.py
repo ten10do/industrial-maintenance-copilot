@@ -1,15 +1,18 @@
-"""Convert authorized Paderborn/XJTU-SY files into shared feature matrices."""
+"""Stream authorized bearing signals into traceable processed feature matrices."""
 
 from __future__ import annotations
 
 import argparse
 import csv
+import gc
 import hashlib
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 import numpy as np
@@ -20,7 +23,30 @@ sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
 from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features  # noqa: E402
 from app.ml.types import FeatureVector, TelemetryWindow  # noqa: E402
-from app.ml.validation import split_windows  # noqa: E402
+
+_STRING_DTYPES = {
+    "target": "<U64",
+    "group": "<U32",
+    "sample_id": "<U64",
+    "source_file": "<U256",
+    "split": "<U10",
+    "feature_version": "<U64",
+    "operating_condition": "<U32",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedRow:
+    values: dict[str, float]
+    target: str | float
+    sample_id: str
+    bearing_id: str
+    source_file: str
+    window_index: int
+    split: str
+    operating_condition: str
+    rul_measurements: int
+    rul_hours: float
 
 
 def main() -> None:
@@ -28,11 +54,14 @@ def main() -> None:
     parser.add_argument("dataset", choices=["paderborn", "xjtu-sy"])
     parser.add_argument("--raw-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--dataset-manifest", type=Path, required=True)
+    parser.add_argument("--split-manifest", type=Path, required=True)
     parser.add_argument("--labels", type=Path)
-    parser.add_argument("--signal-key", default="vibration")
+    parser.add_argument("--signal-key", default="vibration_1")
     parser.add_argument("--signal-unit")
     parser.add_argument("--window-size", type=int, default=4096)
     parser.add_argument("--stride", type=int, default=4096)
+    parser.add_argument("--chunk-rows", type=int, default=1024)
     parser.add_argument(
         "--task",
         choices=["fault_classification", "failure_risk", "rul"],
@@ -40,6 +69,9 @@ def main() -> None:
     )
     parser.add_argument("--failure-horizon-samples", type=int, default=30)
     args = parser.parse_args()
+    dataset_manifest = _read_json(args.dataset_manifest)
+    split_by_bearing = _load_split_map(args.split_manifest)
+    signal_unit = args.signal_unit or ("m/s2" if args.dataset == "paderborn" else "g")
     if args.dataset == "paderborn":
         if args.task != "fault_classification" or args.labels is None:
             parser.error(
@@ -48,8 +80,9 @@ def main() -> None:
         rows = prepare_paderborn(
             args.raw_dir,
             args.labels,
+            split_by_bearing,
             args.signal_key,
-            args.signal_unit or "m/s2",
+            signal_unit,
             args.window_size,
             args.stride,
         )
@@ -58,22 +91,30 @@ def main() -> None:
             parser.error("XJTU-SY preparation supports rul or failure_risk")
         rows = prepare_xjtu(
             args.raw_dir,
+            split_by_bearing,
             args.task,
             args.failure_horizon_samples,
-            args.signal_unit or "g",
+            signal_unit,
         )
     write_processed(
         rows,
         args.output,
         args.dataset,
         args.task,
+        dataset_version=str(dataset_manifest["version"]),
+        dataset_manifest=args.dataset_manifest,
+        split_manifest=args.split_manifest,
+        chunk_rows=args.chunk_rows,
         processing_config={
             "signal_key": args.signal_key,
-            "signal_unit": args.signal_unit
-            or ("m/s2" if args.dataset == "paderborn" else "g"),
-            "window_size": args.window_size,
-            "stride": args.stride,
+            "signal_unit": signal_unit,
+            "window_size": args.window_size if args.dataset == "paderborn" else 32768,
+            "stride": args.stride if args.dataset == "paderborn" else 32768,
             "failure_horizon_samples": args.failure_horizon_samples,
+            "trend_policy": "backward_only",
+            "feature_channel": "vibration_1"
+            if args.dataset == "paderborn"
+            else "horizontal_vibration",
         },
     )
 
@@ -81,65 +122,91 @@ def main() -> None:
 def prepare_paderborn(
     raw_dir: Path,
     labels_path: Path,
+    split_by_bearing: dict[str, str],
     signal_key: str,
     signal_unit: str,
     window_size: int,
     stride: int,
-) -> list[tuple[FeatureVector, str]]:
+) -> Iterator[ProcessedRow]:
     labels = _read_labels(labels_path)
-    rows: list[tuple[FeatureVector, str]] = []
-    history: dict[str, list[FeatureVector]] = {}
-    for index, path in enumerate(sorted(raw_dir.rglob("*.mat"))):
+    histories: dict[tuple[str, str], list[FeatureVector]] = {}
+    found = False
+    for path in sorted(raw_dir.rglob("*.mat"), key=_paderborn_name):
         parts = path.stem.split("_")
-        if len(parts) < 2:
+        if len(parts) < 5:
             raise ValueError(
                 f"cannot derive bearing ID from official filename: {path.name}"
             )
         bearing_id = parts[-2]
         if bearing_id not in labels:
             raise ValueError(f"missing official label mapping for bearing {bearing_id}")
-        signal = _find_mat_signal(loadmat(path), signal_key)
-        started = datetime(2000, 1, 1, tzinfo=UTC) + timedelta(seconds=4 * index)
-        measurement = TelemetryWindow(
-            equipment_id="paderborn-test-rig",
-            bearing_id=bearing_id,
-            signal=tuple(float(value) for value in signal),
-            sampling_rate_hz=64000,
-            started_at=started,
-            ended_at=started + timedelta(seconds=len(signal) / 64000),
-            unit=signal_unit,
-            operating_condition="_".join(parts[:3]),
-            context=_paderborn_context(parts[:3]),
+        split = _required_split(split_by_bearing, bearing_id)
+        condition = "_".join(parts[:3])
+        measurement_number = int(parts[-1])
+        signal = _load_paderborn_channel(path, signal_key)
+        source_file = path.relative_to(raw_dir).as_posix()
+        history = histories.setdefault((bearing_id, condition), [])
+        measurement_start = datetime(2000, 1, 1, tzinfo=UTC) + timedelta(
+            seconds=4 * (measurement_number - 1)
         )
-        for window in split_windows(
-            measurement, window_size=window_size, stride=stride
+        for window_index, start in enumerate(
+            range(0, len(signal) - window_size + 1, stride)
         ):
+            window_signal = signal[start : start + window_size]
+            started = measurement_start + timedelta(seconds=start / 64000)
             vector = extract_features(
-                window, history=history.setdefault(bearing_id, [])
+                TelemetryWindow(
+                    equipment_id="paderborn-test-rig",
+                    bearing_id=bearing_id,
+                    signal=tuple(float(value) for value in window_signal),
+                    sampling_rate_hz=64000,
+                    started_at=started,
+                    ended_at=started + timedelta(seconds=window_size / 64000),
+                    unit=signal_unit,
+                    operating_condition=condition,
+                    context=_paderborn_context(parts[:3]),
+                ),
+                history=history,
             )
-            history[bearing_id].append(vector)
-            rows.append((vector, labels[bearing_id]))
-    if not rows:
+            _append_bounded_history(history, vector)
+            yield ProcessedRow(
+                values=vector.values,
+                target=labels[bearing_id],
+                sample_id=_sample_id("paderborn", source_file, window_index),
+                bearing_id=bearing_id,
+                source_file=source_file,
+                window_index=window_index,
+                split=split,
+                operating_condition=condition,
+                rul_measurements=-1,
+                rul_hours=float("nan"),
+            )
+            found = True
+    if not found:
         raise ValueError("no Paderborn MATLAB files found")
-    return rows
 
 
 def prepare_xjtu(
-    raw_dir: Path, task: str, failure_horizon_samples: int, signal_unit: str
-) -> list[tuple[FeatureVector, str | float]]:
-    rows: list[tuple[FeatureVector, str | float]] = []
+    raw_dir: Path,
+    split_by_bearing: dict[str, str],
+    task: str,
+    failure_horizon_samples: int,
+    signal_unit: str,
+) -> Iterator[ProcessedRow]:
+    found = False
     bearing_dirs = sorted({path.parent for path in raw_dir.rglob("*.csv")})
     for bearing_dir in bearing_dirs:
         files = sorted(bearing_dir.glob("*.csv"), key=_numeric_name)
         if not files:
             continue
         bearing_id = bearing_dir.name
+        split = _required_split(split_by_bearing, bearing_id)
         history: list[FeatureVector] = []
         context = _xjtu_context(bearing_dir)
         for index, path in enumerate(files):
             raw = _load_xjtu_csv(path)
-            if raw.ndim != 2 or raw.shape[1] < 2:
-                raise ValueError(f"expected horizontal/vertical columns in {path}")
+            if raw.ndim != 2 or raw.shape[1] != 2:
+                raise ValueError(f"expected exactly two vibration columns in {path}")
             signal = raw[:, 0]
             started = datetime(2000, 1, 1, tzinfo=UTC) + timedelta(minutes=index)
             vector = extract_features(
@@ -156,65 +223,202 @@ def prepare_xjtu(
                 ),
                 history=history,
             )
-            history.append(vector)
-            samples_remaining = len(files) - index - 1
-            target: str | float
-            if task == "rul":
-                target = samples_remaining / 60.0
-            else:
-                target = "1" if samples_remaining <= failure_horizon_samples else "0"
-            rows.append((vector, target))
-    if not rows:
+            _append_bounded_history(history, vector)
+            remaining = len(files) - index - 1
+            target: str | float = (
+                remaining / 60.0
+                if task == "rul"
+                else ("1" if remaining <= failure_horizon_samples else "0")
+            )
+            source_file = path.relative_to(raw_dir).as_posix()
+            yield ProcessedRow(
+                values=vector.values,
+                target=target,
+                sample_id=_sample_id("xjtu-sy", source_file, 0),
+                bearing_id=bearing_id,
+                source_file=source_file,
+                window_index=index,
+                split=split,
+                operating_condition=bearing_dir.parent.name,
+                rul_measurements=remaining,
+                rul_hours=remaining / 60.0,
+            )
+            found = True
+    if not found:
         raise ValueError("no XJTU-SY CSV acquisitions found")
-    return rows
 
 
 def write_processed(
-    rows: list[tuple[FeatureVector, str | float]],
+    rows: Iterable[ProcessedRow],
     output: Path,
     dataset: str,
     task: str,
+    *,
+    dataset_version: str,
+    dataset_manifest: Path,
+    split_manifest: Path,
+    chunk_rows: int,
     processing_config: dict[str, Any],
 ) -> None:
-    feature_names = sorted(rows[0][0].values)
-    if any(sorted(vector.values) != feature_names for vector, _ in rows):
-        raise ValueError("feature schema differs between rows")
-    features = np.asarray(
-        [[vector.values[name] for name in feature_names] for vector, _ in rows],
-        dtype=np.float64,
-    )
-    targets = np.asarray(
-        [target for _, target in rows], dtype=np.float64 if task == "rul" else str
-    )
-    groups = np.asarray([vector.bearing_id for vector, _ in rows], dtype=str)
+    if chunk_rows <= 0:
+        raise ValueError("chunk_rows must be positive")
     output.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
-        output,
-        features=features,
-        targets=targets,
-        groups=groups,
-        feature_names=np.asarray(feature_names),
-        dataset_name=np.asarray(dataset),
-        dataset_version=np.asarray("bearing-processed-v1"),
-        feature_schema_version=np.asarray(FEATURE_SCHEMA_VERSION),
-    )
+    with TemporaryDirectory(prefix=f".{output.stem}-", dir=output.parent) as name:
+        workspace = Path(name)
+        chunks: list[Path] = []
+        feature_names: list[str] | None = None
+        buffer: list[ProcessedRow] = []
+        total_rows = 0
+        for row in rows:
+            names = sorted(row.values)
+            if feature_names is None:
+                feature_names = names
+            elif names != feature_names:
+                raise ValueError("feature schema differs between rows")
+            buffer.append(row)
+            if len(buffer) >= chunk_rows:
+                chunks.append(
+                    _write_chunk(workspace, len(chunks), buffer, feature_names)
+                )
+                total_rows += len(buffer)
+                buffer.clear()
+        if buffer:
+            if feature_names is None:
+                raise ValueError("no processed rows were generated")
+            chunks.append(_write_chunk(workspace, len(chunks), buffer, feature_names))
+            total_rows += len(buffer)
+            buffer.clear()
+        if not chunks or feature_names is None:
+            raise ValueError("no processed rows were generated")
+        arrays = _consolidate_chunks(
+            workspace, chunks, total_rows, len(feature_names), task
+        )
+        temporary_output = output.with_suffix(f"{output.suffix}.tmp")
+        with temporary_output.open("wb") as stream:
+            np.savez_compressed(
+                stream,
+                **arrays,
+                feature_names=np.asarray(feature_names),
+                dataset_name=np.asarray(dataset),
+                dataset_version=np.asarray(dataset_version),
+                feature_schema_version=np.asarray(FEATURE_SCHEMA_VERSION),
+            )
+        temporary_output.replace(output)
+        for value in arrays.values():
+            if isinstance(value, np.memmap):
+                value.flush()
+                if value._mmap is not None:
+                    value._mmap.close()
+        arrays.clear()
+        del value
+        gc.collect()
     receipt = {
         "dataset_name": dataset,
+        "dataset_version": dataset_version,
         "task_type": task,
         "processed_version": "bearing-processed-v1",
         "feature_schema_version": FEATURE_SCHEMA_VERSION,
-        "rows": len(rows),
-        "bearing_groups": len(set(groups.tolist())),
+        "rows": total_rows,
+        "bearing_groups": len(_load_split_map(split_manifest)),
         "processing_config": processing_config,
-        "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+        "dataset_manifest_sha256": _sha256(dataset_manifest),
+        "split_manifest": split_manifest.as_posix(),
+        "split_manifest_sha256": _sha256(split_manifest),
+        "sha256": _sha256(output),
+        "memory_strategy": f"streaming extraction; {chunk_rows}-row disk chunks; memmap consolidation",
         "created_at": datetime.now(UTC).isoformat(),
     }
     output.with_suffix(".metadata.json").write_text(
         json.dumps(receipt, indent=2) + "\n", encoding="utf-8"
     )
     print(
-        f"wrote {len(rows)} rows from {len(set(groups.tolist()))} bearing groups to {output}"
+        f"wrote {total_rows} rows from {receipt['bearing_groups']} bearing groups to {output}"
     )
+
+
+def _write_chunk(
+    workspace: Path,
+    index: int,
+    rows: list[ProcessedRow],
+    feature_names: list[str],
+) -> Path:
+    path = workspace / f"chunk-{index:05d}.npz"
+    np.savez(
+        path,
+        features=np.asarray(
+            [[row.values[name] for name in feature_names] for row in rows],
+            dtype=np.float64,
+        ),
+        targets=np.asarray([row.target for row in rows]),
+        groups=np.asarray(
+            [row.bearing_id for row in rows], dtype=_STRING_DTYPES["group"]
+        ),
+        sample_ids=np.asarray(
+            [row.sample_id for row in rows], dtype=_STRING_DTYPES["sample_id"]
+        ),
+        source_files=np.asarray(
+            [row.source_file for row in rows], dtype=_STRING_DTYPES["source_file"]
+        ),
+        window_indices=np.asarray([row.window_index for row in rows], dtype=np.int32),
+        splits=np.asarray([row.split for row in rows], dtype=_STRING_DTYPES["split"]),
+        feature_versions=np.asarray(
+            [FEATURE_SCHEMA_VERSION] * len(rows),
+            dtype=_STRING_DTYPES["feature_version"],
+        ),
+        operating_conditions=np.asarray(
+            [row.operating_condition for row in rows],
+            dtype=_STRING_DTYPES["operating_condition"],
+        ),
+        rul_measurements=np.asarray(
+            [row.rul_measurements for row in rows], dtype=np.int32
+        ),
+        rul_hours=np.asarray([row.rul_hours for row in rows], dtype=np.float64),
+    )
+    return path
+
+
+def _consolidate_chunks(
+    workspace: Path,
+    chunks: list[Path],
+    total_rows: int,
+    feature_count: int,
+    task: str,
+) -> dict[str, np.memmap[Any, Any]]:
+    specifications: dict[str, tuple[Any, tuple[int, ...]]] = {
+        "features": (np.float64, (total_rows, feature_count)),
+        "targets": (
+            np.float64 if task == "rul" else _STRING_DTYPES["target"],
+            (total_rows,),
+        ),
+        "groups": (_STRING_DTYPES["group"], (total_rows,)),
+        "sample_ids": (_STRING_DTYPES["sample_id"], (total_rows,)),
+        "source_files": (_STRING_DTYPES["source_file"], (total_rows,)),
+        "window_indices": (np.int32, (total_rows,)),
+        "splits": (_STRING_DTYPES["split"], (total_rows,)),
+        "feature_versions": (_STRING_DTYPES["feature_version"], (total_rows,)),
+        "operating_conditions": (
+            _STRING_DTYPES["operating_condition"],
+            (total_rows,),
+        ),
+        "rul_measurements": (np.int32, (total_rows,)),
+        "rul_hours": (np.float64, (total_rows,)),
+    }
+    arrays = {
+        key: np.lib.format.open_memmap(
+            workspace / f"{key}.npy", mode="w+", dtype=dtype, shape=shape
+        )
+        for key, (dtype, shape) in specifications.items()
+    }
+    offset = 0
+    for path in chunks:
+        with np.load(path, allow_pickle=False) as payload:
+            size = len(payload["groups"])
+            for key, destination in arrays.items():
+                destination[offset : offset + size] = payload[key]
+        offset += size
+    if offset != total_rows:
+        raise AssertionError("processed chunk row count changed during consolidation")
+    return arrays
 
 
 def _read_labels(path: Path) -> dict[str, str]:
@@ -228,32 +432,77 @@ def _read_labels(path: Path) -> dict[str, str]:
     return labels
 
 
-def _find_mat_signal(value: Any, signal_key: str) -> np.ndarray[Any, Any]:
-    candidates = list(_walk_mat(value, signal_key.lower()))
-    if not candidates:
+def _load_paderborn_channel(path: Path, signal_key: str) -> np.ndarray[Any, Any]:
+    payload = loadmat(path, squeeze_me=True, struct_as_record=False)
+    root = payload.get(path.stem)
+    if root is None or not hasattr(root, "Y"):
+        raise ValueError(f"MATLAB payload has no official Y channel collection: {path}")
+    matches: list[np.ndarray[Any, Any]] = []
+    requested = signal_key.lower()
+    for item in np.atleast_1d(root.Y):
+        name = str(getattr(item, "Name", "")).lower()
+        if name == requested or (
+            requested == "vibration" and name.startswith("vibration_")
+        ):
+            matches.append(np.asarray(item.Data, dtype=np.float64).reshape(-1))
+    if len(matches) != 1:
         raise ValueError(
-            f"MATLAB payload does not contain configured signal key {signal_key!r}"
+            f"expected one official channel {signal_key!r} in {path.name}, found {len(matches)}"
         )
-    return np.asarray(
-        max(candidates, key=lambda item: item.size), dtype=np.float64
-    ).reshape(-1)
+    return matches[0]
 
 
-def _walk_mat(
-    value: Any, signal_key: str, path: str = ""
-) -> Iterator[np.ndarray[Any, Any]]:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            yield from _walk_mat(child, signal_key, f"{path}.{key}")
-    elif isinstance(value, np.ndarray):
-        if value.dtype.names:
-            for name in value.dtype.names:
-                yield from _walk_mat(value[name], signal_key, f"{path}.{name}")
-        elif value.dtype == object:
-            for child in value.flat:
-                yield from _walk_mat(child, signal_key, path)
-        elif signal_key in path.lower() and np.issubdtype(value.dtype, np.number):
-            yield value
+def _load_split_map(path: Path) -> dict[str, str]:
+    manifest = _read_json(path)
+    result: dict[str, str] = {}
+    for split in ("train", "validation", "test"):
+        groups = manifest.get(split)
+        if not isinstance(groups, list) or not groups:
+            raise ValueError(f"split manifest has no {split} groups")
+        for group in groups:
+            name = str(group)
+            if name in result:
+                raise ValueError(f"bearing appears in multiple splits: {name}")
+            result[name] = split
+    return result
+
+
+def _required_split(mapping: dict[str, str], bearing_id: str) -> str:
+    try:
+        return mapping[bearing_id]
+    except KeyError:
+        raise ValueError(
+            f"bearing is absent from locked split manifest: {bearing_id}"
+        ) from None
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise TypeError(f"expected JSON object: {path}")
+    return value
+
+
+def _sample_id(dataset: str, source_file: str, window_index: int) -> str:
+    value = f"{dataset}|{source_file}|{window_index}".encode()
+    return hashlib.sha256(value).hexdigest()
+
+
+def _append_bounded_history(
+    history: list[FeatureVector], vector: FeatureVector
+) -> None:
+    if not history:
+        history.append(vector)
+        return
+    history.append(vector)
+    if len(history) > 10:
+        del history[1]
+
+
+def _paderborn_name(path: Path) -> tuple[str, str, int]:
+    parts = path.stem.split("_")
+    measurement = int(parts[-1]) if parts[-1].isdigit() else sys.maxsize
+    return path.parent.name, "_".join(parts[:3]), measurement
 
 
 def _numeric_name(path: Path) -> tuple[int, str]:
@@ -264,13 +513,12 @@ def _numeric_name(path: Path) -> tuple[int, str]:
 
 
 def _xjtu_context(bearing_dir: Path) -> dict[str, float]:
-    name = bearing_dir.parent.name.lower()
     conditions = {
         "35hz12kn": {"speed_rpm": 2100.0, "radial_force_kn": 12.0},
         "37.5hz11kn": {"speed_rpm": 2250.0, "radial_force_kn": 11.0},
         "40hz10kn": {"speed_rpm": 2400.0, "radial_force_kn": 10.0},
     }
-    return conditions.get(name, {})
+    return conditions.get(bearing_dir.parent.name.lower(), {})
 
 
 def _paderborn_context(codes: list[str]) -> dict[str, float]:
@@ -290,8 +538,15 @@ def _load_xjtu_csv(path: Path) -> np.ndarray[Any, Any]:
     try:
         return np.loadtxt(path, delimiter=",", dtype=np.float64)
     except ValueError:
-        # Official archives commonly include a single descriptive header row.
         return np.loadtxt(path, delimiter=",", dtype=np.float64, skiprows=1)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 if __name__ == "__main__":

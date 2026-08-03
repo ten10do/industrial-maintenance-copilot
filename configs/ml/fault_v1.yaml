@@ -8,15 +8,21 @@ window_size: 4096
 stride: 4096
 seed: 20260803
 split:
-  strategy: group_shuffle_split
+  strategy: locked_group_manifest
   group: bearing_id
-  validation_size: 0.2
-  test_size: 0.2
+  manifest: ../../data/manifests/paderborn-split-v1.json
+preprocessing:
+  fit_split: train
+  feature_selector: not_configured
+selection_split: validation
+test_usage: final_selected_model_evaluation_once
+leakage_audit_path: ../../data/processed/leakage-audit-v1.json
 models:
   - algorithm: logistic_regression
     hyperparameters:
       C: 1.0
       class_weight: balanced
+      n_jobs: -1
   - algorithm: random_forest
     hyperparameters:
       n_estimators: 300

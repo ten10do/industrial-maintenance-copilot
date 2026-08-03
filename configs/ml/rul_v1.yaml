@@ -8,10 +8,15 @@ window_size: 32768
 stride: 32768
 seed: 20260803
 split:
-  strategy: group_shuffle_split
+  strategy: locked_group_manifest
   group: bearing_id
-  validation_size: 0.2
-  test_size: 0.2
+  manifest: ../../data/manifests/xjtu-rul-split-v1.json
+preprocessing:
+  fit_split: train
+  feature_selector: not_configured
+selection_split: validation
+test_usage: final_selected_model_evaluation_once
+leakage_audit_path: ../../data/processed/leakage-audit-v1.json
 models:
   - algorithm: ridge
     hyperparameters:
@@ -21,6 +26,7 @@ models:
       n_estimators: 300
       max_depth: 12
       min_samples_leaf: 2
+      n_jobs: -1
   - algorithm: hist_gradient_boosting
     hyperparameters:
       max_iter: 150

@@ -19,7 +19,10 @@ from app.ml.features import (
 )
 from app.ml.inference import predict
 from app.ml.selection import CandidateMetrics, select_failure_model, select_rul_model
-from app.ml.splitting import grouped_train_validation_test_split
+from app.ml.splitting import (
+    grouped_split_from_manifest,
+    grouped_train_validation_test_split,
+)
 from app.ml.training import train_from_config
 from app.ml.types import TelemetryWindow
 from app.ml.validation import SignalValidationError, split_windows, validated_signal
@@ -123,6 +126,27 @@ def test_group_split_never_leaks_bearings():
     assert not validation & test
 
 
+def test_locked_group_manifest_is_materialized_without_overlap(tmp_path: Path):
+    groups = ["bearing-a", "bearing-a", "bearing-b", "bearing-c"]
+    manifest = tmp_path / "split.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "train": ["bearing-a"],
+                "validation": ["bearing-b"],
+                "test": ["bearing-c"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    split = grouped_split_from_manifest(groups, manifest)
+
+    assert split.train.tolist() == [0, 1]
+    assert split.validation.tolist() == [2]
+    assert split.test.tolist() == [3]
+
+
 def test_safety_selection_policies_enforce_recall_and_late_error():
     chosen = select_failure_model(
         [
@@ -208,6 +232,20 @@ def test_tiny_synthetic_training_runs_without_test_set_selection(tmp_path: Path)
         features=np.asarray(features),
         targets=np.asarray(targets),
         groups=np.asarray(groups),
+        sample_ids=np.asarray(
+            [f"synthetic-sample-{index}" for index in range(len(groups))]
+        ),
+        source_files=np.asarray(
+            [f"synthetic/source-{index}.csv" for index in range(len(groups))]
+        ),
+        window_indices=np.asarray(
+            [index % 12 for index in range(len(groups))], dtype=np.int64
+        ),
+        splits=np.asarray(["unassigned"] * len(groups)),
+        feature_versions=np.asarray([FEATURE_SCHEMA_VERSION] * len(groups)),
+        operating_conditions=np.asarray(["synthetic"] * len(groups)),
+        rul_measurements=np.asarray([-1] * len(groups), dtype=np.int64),
+        rul_hours=np.asarray([np.nan] * len(groups), dtype=np.float64),
         feature_names=np.asarray([f"f{index}" for index in range(5)]),
         dataset_name=np.asarray("xjtu-sy"),
         dataset_version=np.asarray("synthetic-ci-only"),

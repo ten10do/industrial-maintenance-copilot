@@ -81,9 +81,14 @@ def load_artifact_bundle(
         or metadata.get("feature_schema_version") != expected_feature_schema_version
     ):
         raise ValueError("artifact feature schema version mismatch")
+    try:
+        model = joblib.load(artifact_dir / "model.joblib")
+        preprocessor = joblib.load(artifact_dir / "preprocessor.joblib")
+    except Exception as exc:
+        raise ValueError("artifact model or preprocessor could not be loaded") from exc
     return LoadedArtifact(
-        model=joblib.load(artifact_dir / "model.joblib"),
-        preprocessor=joblib.load(artifact_dir / "preprocessor.joblib"),
+        model=model,
+        preprocessor=preprocessor,
         feature_names=tuple(str(name) for name in schema["features"]),
         metadata=metadata,
         metrics=_read_json(artifact_dir / "metrics.json"),

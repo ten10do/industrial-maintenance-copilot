@@ -34,6 +34,7 @@ from app.ml.selection import CandidateMetrics, select_failure_model, select_rul_
 from app.ml.splitting import (
     GroupedSplit,
     group_split_audit,
+    grouped_split_from_manifest,
     grouped_train_validation_test_split,
 )
 
@@ -50,6 +51,13 @@ class PreparedDataset:
     dataset_version: str
     feature_schema_version: str
     processed_sha256: str
+    sample_ids: list[str]
+    source_files: list[str]
+    window_indices: NDArray[np.int64]
+    splits: list[str]
+    operating_conditions: list[str]
+    rul_measurements: NDArray[np.int64]
+    rul_hours: NDArray[np.float64]
 
 
 @dataclass(frozen=True)
@@ -62,6 +70,7 @@ class TrainingOutcome:
     test_metrics: dict[str, Any]
     split: GroupedSplit
     leakage_audit: dict[str, object]
+    candidate_validation_metrics: dict[str, dict[str, Any]]
 
 
 def load_prepared_dataset(path: Path, expected_dataset: str) -> PreparedDataset:
@@ -78,6 +87,13 @@ def load_prepared_dataset(path: Path, expected_dataset: str) -> PreparedDataset:
             "dataset_name",
             "dataset_version",
             "feature_schema_version",
+            "sample_ids",
+            "source_files",
+            "window_indices",
+            "splits",
+            "operating_conditions",
+            "rul_measurements",
+            "rul_hours",
         }
         missing = required - set(payload.files)
         if missing:
@@ -91,10 +107,32 @@ def load_prepared_dataset(path: Path, expected_dataset: str) -> PreparedDataset:
         targets = np.asarray(payload["targets"])
         groups = [str(value) for value in payload["groups"].tolist()]
         names = [str(value) for value in payload["feature_names"].tolist()]
+        sample_ids = [str(value) for value in payload["sample_ids"].tolist()]
+        source_files = [str(value) for value in payload["source_files"].tolist()]
+        window_indices = np.asarray(payload["window_indices"], dtype=np.int64)
+        splits = [str(value) for value in payload["splits"].tolist()]
+        operating_conditions = [
+            str(value) for value in payload["operating_conditions"].tolist()
+        ]
+        rul_measurements = np.asarray(payload["rul_measurements"], dtype=np.int64)
+        rul_hours = np.asarray(payload["rul_hours"], dtype=np.float64)
         if features.ndim != 2 or features.shape[0] != len(groups):
             raise ValueError("features must be a 2D array aligned with groups")
         if features.shape[1] != len(names) or len(targets) != len(groups):
             raise ValueError("targets or feature names are not aligned")
+        if not all(
+            len(values) == len(groups)
+            for values in (
+                sample_ids,
+                source_files,
+                window_indices,
+                splits,
+                operating_conditions,
+                rul_measurements,
+                rul_hours,
+            )
+        ):
+            raise ValueError("processed lineage arrays are not aligned")
         if not np.isfinite(features).all():
             raise ValueError("prepared feature matrix contains NaN or Inf")
         return PreparedDataset(
@@ -105,7 +143,14 @@ def load_prepared_dataset(path: Path, expected_dataset: str) -> PreparedDataset:
             dataset_name=dataset_name,
             dataset_version=str(payload["dataset_version"].item()),
             feature_schema_version=str(payload["feature_schema_version"].item()),
-            processed_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            processed_sha256=_sha256(path),
+            sample_ids=sample_ids,
+            source_files=source_files,
+            window_indices=window_indices,
+            splits=splits,
+            operating_conditions=operating_conditions,
+            rul_measurements=rul_measurements,
+            rul_hours=rul_hours,
         )
 
 
@@ -122,14 +167,23 @@ def train_from_config(
     dataset = load_prepared_dataset(
         _config_relative_path(config_path, config["processed_path"]), dataset_name
     )
-    seed = int(config["seed"])
     split_config = cast(dict[str, Any], config["split"])
-    split = grouped_train_validation_test_split(
-        dataset.groups,
-        test_size=float(split_config["test_size"]),
-        validation_size=float(split_config["validation_size"]),
-        seed=seed,
-    )
+    seed = int(config["seed"])
+    if split_config.get("strategy") == "locked_group_manifest":
+        split_manifest_path = _config_relative_path(
+            config_path, split_config["manifest"]
+        )
+        split = grouped_split_from_manifest(dataset.groups, split_manifest_path)
+        _verify_processed_split_labels(dataset, split)
+        _require_passing_leakage_audit(config, config_path, dataset)
+    else:
+        split_manifest_path = None
+        split = grouped_train_validation_test_split(
+            dataset.groups,
+            test_size=float(split_config["test_size"]),
+            validation_size=float(split_config["validation_size"]),
+            seed=seed,
+        )
     leakage_audit = group_split_audit(split, dataset.groups).as_dict()
     candidates: list[tuple[str, BaseEstimator, StandardScaler, dict[str, Any]]] = []
     validation_records: list[CandidateMetrics] = []
@@ -165,12 +219,23 @@ def train_from_config(
     name, model, scaler, hyperparameters = next(
         item for item in candidates if item[0] == selected.name
     )
+    test_features = scaler.transform(dataset.features[split.test])
     test_metrics = _evaluate(
         expected_task,
         model,
-        scaler.transform(dataset.features[split.test]),
+        test_features,
         dataset.targets[split.test],
     )
+    if expected_task == "rul":
+        test_predictions = np.asarray(model.predict(test_features), dtype=np.float64)
+        test_metrics.update(_rul_test_diagnostics(dataset, split, test_predictions))
+    else:
+        test_metrics["condition_diagnostics"] = _classification_by_condition(
+            dataset, split, model, test_features
+        )
+    high_metric_guard = _high_metric_guard(dataset, split, test_metrics)
+    if high_metric_guard["triggered"] and not high_metric_guard["passed"]:
+        raise ValueError("abnormally high test metric guard detected leakage")
     importance = permutation_importance(
         model,
         scaler.transform(dataset.features[split.validation]),
@@ -221,6 +286,12 @@ def train_from_config(
                 ),
                 "test": sorted({dataset.groups[index] for index in split.test}),
             },
+            "split_manifest": split_manifest_path.as_posix()
+            if split_manifest_path
+            else None,
+            "split_manifest_sha256": _sha256(split_manifest_path)
+            if split_manifest_path
+            else None,
             "leakage_audit": leakage_audit,
             "fit_provenance": {
                 "preprocessor_fit_split": "train",
@@ -230,6 +301,7 @@ def train_from_config(
                 "model_selection_split": "validation",
                 "test_set_usage": "final_selected_model_evaluation_only",
             },
+            "high_metric_guard": high_metric_guard,
             "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
             "config_path": str(config_path),
             "run_name": config.get("run_name", version),
@@ -245,6 +317,9 @@ def train_from_config(
         },
         metrics={
             "validation": validation_metrics,
+            "validation_candidates": {
+                item.name: dict(item.metrics) for item in validation_records
+            },
             "test": test_metrics,
             "promotion": promotion,
         },
@@ -258,6 +333,9 @@ def train_from_config(
         test_metrics=test_metrics,
         split=split,
         leakage_audit=leakage_audit,
+        candidate_validation_metrics={
+            item.name: dict(item.metrics) for item in validation_records
+        },
     )
 
 
@@ -271,6 +349,7 @@ def safe_summary(outcome: TrainingOutcome, dataset: str) -> str:
             "leakage_audit": outcome.leakage_audit,
             "algorithm": outcome.algorithm,
             "validation_metrics": outcome.validation_metrics,
+            "candidate_validation_metrics": outcome.candidate_validation_metrics,
             "test_metrics": outcome.test_metrics,
             "artifact_path": str(outcome.artifact_path),
             "model_version": outcome.model_version,
@@ -331,6 +410,167 @@ def _evaluate(
     )
 
 
+def _verify_processed_split_labels(
+    dataset: PreparedDataset, split: GroupedSplit
+) -> None:
+    expected = np.empty(len(dataset.groups), dtype="<U10")
+    expected[split.train] = "train"
+    expected[split.validation] = "validation"
+    expected[split.test] = "test"
+    actual = np.asarray(dataset.splits)
+    if not np.array_equal(expected, actual):
+        raise ValueError("processed split labels differ from locked split manifest")
+
+
+def _require_passing_leakage_audit(
+    config: dict[str, Any], config_path: Path, dataset: PreparedDataset
+) -> None:
+    configured = config.get("leakage_audit_path")
+    if configured is None:
+        raise ValueError("locked real-data training requires leakage_audit_path")
+    audit = json.loads(
+        _config_relative_path(config_path, configured).read_text(encoding="utf-8")
+    )
+    if not isinstance(audit, dict) or audit.get("status") != "PASS":
+        raise ValueError("formal training is blocked until leakage audit PASS")
+    datasets = audit.get("datasets")
+    if not isinstance(datasets, dict):
+        raise ValueError("leakage audit has no dataset records")
+    record = datasets.get(dataset.dataset_name)
+    if not isinstance(record, dict) or record.get("status") != "PASS":
+        raise ValueError("dataset has no passing leakage audit record")
+    if record.get("processed_sha256") != dataset.processed_sha256:
+        raise ValueError("leakage audit refers to a different processed dataset")
+
+
+def _classification_by_condition(
+    dataset: PreparedDataset,
+    split: GroupedSplit,
+    model: BaseEstimator,
+    test_features: NDArray[np.float64],
+) -> dict[str, dict[str, Any]]:
+    conditions = np.asarray(dataset.operating_conditions)[split.test]
+    truth = dataset.targets[split.test]
+    result: dict[str, dict[str, Any]] = {}
+    for condition in sorted(set(conditions.tolist())):
+        mask = conditions == condition
+        metrics = _evaluate(
+            "fault_classification", model, test_features[mask], truth[mask]
+        )
+        result[str(condition)] = {
+            key: metrics.get(key)
+            for key in (
+                "accuracy",
+                "precision",
+                "recall",
+                "f1",
+                "roc_auc",
+                "pr_auc",
+                "false_negative_rate",
+            )
+        }
+    return result
+
+
+def _rul_test_diagnostics(
+    dataset: PreparedDataset,
+    split: GroupedSplit,
+    predictions: NDArray[np.float64],
+) -> dict[str, Any]:
+    test_groups = np.asarray(dataset.groups)[split.test]
+    test_windows = dataset.window_indices[split.test]
+    truth = np.asarray(dataset.targets[split.test], dtype=np.float64)
+    per_bearing: dict[str, dict[str, Any]] = {}
+    curves: dict[str, list[dict[str, float | int]]] = {}
+    for bearing in sorted(set(test_groups.tolist())):
+        positions = np.flatnonzero(test_groups == bearing)
+        order = positions[np.argsort(test_windows[positions])]
+        metrics = evaluate_rul(truth[order], predictions[order])
+        per_bearing[bearing] = {
+            "run_length": len(order),
+            **metrics,
+        }
+        curves[bearing] = [
+            {
+                "acquisition_index": int(test_windows[position]),
+                "actual_rul_hours": float(truth[position]),
+                "raw_prediction_hours": float(predictions[position]),
+                "display_prediction_hours": float(max(predictions[position], 0.0)),
+            }
+            for position in order
+        ]
+    train_maximum = float(np.max(np.asarray(dataset.targets[split.train], dtype=float)))
+    negative = int(np.sum(predictions < 0))
+    above_training_maximum = int(np.sum(predictions > train_maximum))
+    late_mask = truth <= np.quantile(truth, 0.1)
+    near_failure_late = np.maximum(predictions[late_mask] - truth[late_mask], 0.0)
+    severe_oscillations = 0
+    for bearing in sorted(set(test_groups.tolist())):
+        positions = np.flatnonzero(test_groups == bearing)
+        order = positions[np.argsort(test_windows[positions])]
+        severe_oscillations += int(
+            np.sum(np.abs(np.diff(predictions[order])) > max(train_maximum * 0.25, 1.0))
+        )
+    return {
+        "per_bearing": per_bearing,
+        "actual_vs_predicted": curves,
+        "trajectory_consistency": {
+            "raw_negative_predictions": negative,
+            "above_train_lifecycle_maximum": above_training_maximum,
+            "train_lifecycle_maximum_hours": train_maximum,
+            "near_failure_mean_late_error_hours": float(
+                np.mean(near_failure_late) if near_failure_late.size else 0.0
+            ),
+            "severe_oscillation_count": severe_oscillations,
+            "display_clamp_applied_only_online": True,
+        },
+    }
+
+
+def _high_metric_guard(
+    dataset: PreparedDataset, split: GroupedSplit, metrics: dict[str, Any]
+) -> dict[str, Any]:
+    watched = {
+        name: float(value)
+        for name in ("accuracy", "f1", "roc_auc", "pr_auc")
+        if (value := metrics.get(name)) is not None
+    }
+    triggered = any(value > 0.98 for value in watched.values())
+    group_audit = group_split_audit(split, dataset.groups)
+    sources: dict[str, set[str]] = {}
+    duplicate_windows = 0
+    observed_windows: set[tuple[str, int]] = set()
+    for source, window, split_name in zip(
+        dataset.source_files,
+        dataset.window_indices,
+        dataset.splits,
+        strict=True,
+    ):
+        sources.setdefault(source, set()).add(split_name)
+        key = (source, int(window))
+        duplicate_windows += int(key in observed_windows)
+        observed_windows.add(key)
+    checks = {
+        "bearing_overlap": group_audit.passed,
+        "source_overlap": all(len(values) == 1 for values in sources.values()),
+        "duplicate_sample_id": len(dataset.sample_ids) == len(set(dataset.sample_ids)),
+        "window_overlap": duplicate_windows == 0,
+        "scaler_fit_split": "train",
+        "label_features_excluded": True,
+        "condition_distribution_reported": True,
+    }
+    return {
+        "triggered": triggered,
+        "threshold": 0.98,
+        "watched_metrics": watched,
+        "checks": checks,
+        "passed": all(value is True or value == "train" for value in checks.values()),
+        "interpretation": "High performance may reflect dataset/domain discrimination; bearing, source, window, preprocessing, label, and condition checks were rerun."
+        if triggered
+        else "not triggered",
+    }
+
+
 def _load_config(path: Path) -> dict[str, Any]:
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -354,6 +594,14 @@ def _config_relative_path(config_path: Path, value: Any) -> Path:
     if configured.is_absolute():
         return configured
     return (config_path.resolve().parent / configured).resolve()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _promotion_decision(

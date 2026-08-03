@@ -1,0 +1,37 @@
+{
+  "dataset": "paderborn",
+  "split_version": "paderborn-split-v1",
+  "strategy": "pre-metric stratification by fault_class and damage_origin",
+  "group": "bearing_id",
+  "seed": 20260803,
+  "locked": true,
+  "designed_before_test_evaluation": true,
+  "train": [
+    "K001", "K002", "K003", "K006", "KA01", "KA04", "KA05", "KA06",
+    "KA08", "KA09", "KA15", "KA30", "KB23", "KI03", "KI05", "KI08",
+    "KI14", "KI16", "KI17", "KI21"
+  ],
+  "validation": ["K005", "KA07", "KA16", "KB24", "KI07", "KI18"],
+  "test": ["K004", "KA03", "KA22", "KB27", "KI01", "KI04"],
+  "distribution": {
+    "train": {
+      "fault_class": {"healthy": 4, "outer_ring": 8, "inner_ring": 7, "combined_inner_outer": 1},
+      "damage_origin": {"healthy": 4, "artificial": 8, "real": 8}
+    },
+    "validation": {
+      "fault_class": {"healthy": 1, "outer_ring": 2, "inner_ring": 2, "combined_inner_outer": 1},
+      "damage_origin": {"healthy": 1, "artificial": 2, "real": 3}
+    },
+    "test": {
+      "fault_class": {"healthy": 1, "outer_ring": 2, "inner_ring": 2, "combined_inner_outer": 1},
+      "damage_origin": {"healthy": 1, "artificial": 2, "real": 3}
+    }
+  },
+  "intersections": {
+    "train_validation": [],
+    "train_test": [],
+    "validation_test": []
+  },
+  "open_set_test": false,
+  "notes": "Every test fault class and fault type is represented in train. Split is locked before feature extraction or metric inspection."
+}

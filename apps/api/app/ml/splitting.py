@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from numpy.typing import NDArray
@@ -74,6 +76,49 @@ def grouped_train_validation_test_split(
         train=indices[train_validation[train_local]],
         validation=indices[train_validation[validation_local]],
         test=indices[test],
+    )
+    assert_disjoint_groups(split, groups)
+    return split
+
+
+def grouped_split_from_manifest(groups: list[str], manifest_path: Path) -> GroupedSplit:
+    """Materialize a pre-metric, immutable bearing split manifest."""
+    value = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise TypeError("split manifest root must be an object")
+    split_groups: dict[str, set[str]] = {}
+    for name in ("train", "validation", "test"):
+        configured = value.get(name)
+        if not isinstance(configured, list) or not configured:
+            raise ValueError(f"split manifest has no {name} groups")
+        split_groups[name] = {str(item) for item in configured}
+        if len(split_groups[name]) != len(configured):
+            raise ValueError(f"split manifest has duplicate {name} groups")
+    if (
+        split_groups["train"] & split_groups["validation"]
+        or split_groups["train"] & split_groups["test"]
+        or split_groups["validation"] & split_groups["test"]
+    ):
+        raise ValueError("split manifest bearing groups overlap")
+    observed = set(groups)
+    configured_groups = set().union(*split_groups.values())
+    if observed != configured_groups:
+        raise ValueError(
+            "split manifest and processed bearing groups differ: "
+            f"missing={sorted(observed - configured_groups)}, "
+            f"unexpected={sorted(configured_groups - observed)}"
+        )
+    group_array = np.asarray(groups)
+    split = GroupedSplit(
+        train=np.flatnonzero(np.isin(group_array, list(split_groups["train"]))).astype(
+            np.int64
+        ),
+        validation=np.flatnonzero(
+            np.isin(group_array, list(split_groups["validation"]))
+        ).astype(np.int64),
+        test=np.flatnonzero(np.isin(group_array, list(split_groups["test"]))).astype(
+            np.int64
+        ),
     )
     assert_disjoint_groups(split, groups)
     return split

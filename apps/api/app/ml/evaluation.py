@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.metrics import (
+    accuracy_score,
     average_precision_score,
     brier_score_loss,
     confusion_matrix,
@@ -15,10 +16,12 @@ from sklearn.metrics import (
     mean_absolute_error,
     mean_squared_error,
     median_absolute_error,
+    precision_recall_curve,
     precision_score,
     r2_score,
     recall_score,
     roc_auc_score,
+    roc_curve,
 )
 
 
@@ -32,6 +35,7 @@ def evaluate_binary_classification(
     negative_count = true_negative + false_positive
     positive_count = true_positive + false_negative
     return {
+        "accuracy": float(accuracy_score(truth, predicted)),
         "precision": float(precision_score(truth, predicted, zero_division=0)),
         "recall": float(recall_score(truth, predicted, zero_division=0)),
         "f1": float(f1_score(truth, predicted, zero_division=0)),
@@ -42,6 +46,17 @@ def evaluate_binary_classification(
         "false_positive_rate": float(false_positive / max(negative_count, 1)),
         "brier_score": float(brier_score_loss(truth, failure_probability)),
         "calibration_curve": _calibration_curve(truth, failure_probability),
+        "pr_curve": _curve_points(
+            *precision_recall_curve(truth, failure_probability)[:2],
+            x_name="recall",
+            y_name="precision",
+            reverse=True,
+        ),
+        "roc_curve": _curve_points(
+            *roc_curve(truth, failure_probability)[:2],
+            x_name="false_positive_rate",
+            y_name="true_positive_rate",
+        ),
     }
 
 
@@ -57,7 +72,55 @@ def evaluate_multiclass_classification(
     false_positives = matrix.sum(axis=0) - np.diag(matrix)
     positives = matrix.sum(axis=1)
     negatives = matrix.sum() - positives
+    per_class = {
+        str(name): {
+            "precision": float(
+                precision_score(
+                    truth, predicted, labels=[name], average=None, zero_division=0
+                )[0]
+            ),
+            "recall": float(
+                recall_score(
+                    truth, predicted, labels=[name], average=None, zero_division=0
+                )[0]
+            ),
+            "f1": float(
+                f1_score(
+                    truth, predicted, labels=[name], average=None, zero_division=0
+                )[0]
+            ),
+            "support": int(np.sum(truth == name)),
+        }
+        for name in classes
+    }
+    calibration = {
+        str(name): _calibration_curve(encoded[:, index], probabilities[:, index])
+        for index, name in enumerate(classes)
+    }
+    pr_curves: dict[str, list[dict[str, float]]] = {}
+    roc_curves: dict[str, list[dict[str, float]]] = {}
+    for index, name in enumerate(classes):
+        precision, recall, _ = precision_recall_curve(
+            encoded[:, index], probabilities[:, index]
+        )
+        pr_curves[str(name)] = _curve_points(
+            recall,
+            precision,
+            x_name="recall",
+            y_name="precision",
+            reverse=True,
+        )
+        false_positive, true_positive, _ = roc_curve(
+            encoded[:, index], probabilities[:, index]
+        )
+        roc_curves[str(name)] = _curve_points(
+            false_positive,
+            true_positive,
+            x_name="false_positive_rate",
+            y_name="true_positive_rate",
+        )
     return {
+        "accuracy": float(accuracy_score(truth, predicted)),
         "precision": float(
             precision_score(truth, predicted, average="macro", zero_division=0)
         ),
@@ -65,6 +128,15 @@ def evaluate_multiclass_classification(
             recall_score(truth, predicted, average="macro", zero_division=0)
         ),
         "f1": float(f1_score(truth, predicted, average="macro", zero_division=0)),
+        "weighted_precision": float(
+            precision_score(truth, predicted, average="weighted", zero_division=0)
+        ),
+        "weighted_recall": float(
+            recall_score(truth, predicted, average="weighted", zero_division=0)
+        ),
+        "weighted_f1": float(
+            f1_score(truth, predicted, average="weighted", zero_division=0)
+        ),
         "roc_auc": _safe_auc(roc_auc_score, encoded, probabilities, average="macro"),
         "pr_auc": _safe_auc(
             average_precision_score, encoded, probabilities, average="macro"
@@ -77,6 +149,10 @@ def evaluate_multiclass_classification(
             np.mean(false_positives / np.maximum(negatives, 1))
         ),
         "brier_score": float(np.mean(np.square(encoded - probabilities))),
+        "per_class": per_class,
+        "calibration_curve": calibration,
+        "pr_curve": pr_curves,
+        "roc_curve": roc_curves,
     }
 
 
@@ -127,3 +203,25 @@ def _calibration_curve(
             }
         )
     return result
+
+
+def _curve_points(
+    x: NDArray[np.float64],
+    y: NDArray[np.float64],
+    *,
+    x_name: str,
+    y_name: str,
+    reverse: bool = False,
+    maximum_points: int = 200,
+) -> list[dict[str, float]]:
+    if reverse:
+        x = x[::-1]
+        y = y[::-1]
+    if len(x) > maximum_points:
+        selected = np.linspace(0, len(x) - 1, maximum_points, dtype=int)
+        x = x[selected]
+        y = y[selected]
+    return [
+        {x_name: float(x_value), y_name: float(y_value)}
+        for x_value, y_value in zip(x, y, strict=True)
+    ]

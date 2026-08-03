@@ -21,12 +21,15 @@ from audit_bearing_dataset import (  # noqa: E402
     audit_xjtu,
     record_paderborn_extraction,
 )
+from audit_ml_leakage import audit_processed_dataset  # noqa: E402
+from create_dataset_snapshot import create_snapshot  # noqa: E402
 from download_paderborn_dataset import (  # noqa: E402
     EXPECTED_BEARINGS,
     download_file,
     parse_official_listing,
     verify_official_listing,
 )
+from prepare_bearing_dataset import ProcessedRow, write_processed  # noqa: E402
 
 
 def _sha256(path: Path) -> str:
@@ -243,3 +246,132 @@ def test_xjtu_audit_rejects_non_finite_measurements(tmp_path: Path) -> None:
 
     assert result["status"] == "FAIL"
     assert "non-finite numeric value" in result["malformed_csv"][0]
+
+
+def test_snapshot_version_and_processed_lineage_are_deterministic(
+    tmp_path: Path,
+) -> None:
+    template = tmp_path / "template.json"
+    template.write_text(
+        json.dumps(
+            {
+                "source_url": "https://example.test/official",
+                "license": "research only",
+                "citation": "fixture",
+                "processed_version": "bearing-processed-v1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    download = tmp_path / "download.json"
+    download.write_text(
+        json.dumps(
+            {
+                "archives": [
+                    {
+                        "archive": f"K{index:03d}.rar",
+                        "sha256": f"{index:064x}",
+                        "size_bytes": index,
+                    }
+                    for index in range(1, 33)
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    split = tmp_path / "paderborn-split-v1.json"
+    split.write_text(
+        json.dumps(
+            {
+                "train": [f"bearing-{index}" for index in range(20)],
+                "validation": [f"bearing-{index}" for index in range(20, 26)],
+                "test": [f"bearing-{index}" for index in range(26, 32)],
+            }
+        ),
+        encoding="utf-8",
+    )
+    config = tmp_path / "fault.yaml"
+    config.write_text(
+        """split:\n  strategy: locked_group_manifest\n  manifest: paderborn-split-v1.json\npreprocessing:\n  fit_split: train\nselection_split: validation\ntest_usage: final_selected_model_evaluation_once\n""",
+        encoding="utf-8",
+    )
+
+    first = create_snapshot(
+        dataset="paderborn",
+        template_path=template,
+        download_manifest_path=download,
+        split_manifest_path=split,
+        processing_config_path=config,
+        git_sha="a" * 40,
+    )
+    second = create_snapshot(
+        dataset="paderborn",
+        template_path=template,
+        download_manifest_path=download,
+        split_manifest_path=split,
+        processing_config_path=config,
+        git_sha="b" * 40,
+    )
+
+    assert first["version"] == second["version"]
+    assert first["git_sha"] != second["git_sha"]
+    assert first["bearing_count"] == 32
+
+    dataset_manifest = tmp_path / "dataset.json"
+    dataset_manifest.write_text(json.dumps(first), encoding="utf-8")
+    output = tmp_path / "processed.npz"
+    rows = [
+        ProcessedRow(
+            values={"rms": float(index + 1)},
+            target="healthy" if index == 0 else "outer_ring",
+            sample_id=f"sample-{index}",
+            bearing_id=f"bearing-{index}",
+            source_file=f"bearing-{index}/source.mat",
+            window_index=0,
+            split="train" if index == 0 else ("validation" if index == 1 else "test"),
+            operating_condition="N15_M07_F10",
+            rul_measurements=-1,
+            rul_hours=float("nan"),
+        )
+        for index in range(3)
+    ]
+    small_split = tmp_path / "small-split.json"
+    small_split.write_text(
+        json.dumps(
+            {
+                "train": ["bearing-0"],
+                "validation": ["bearing-1"],
+                "test": ["bearing-2"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    small_config = tmp_path / "small-config.yaml"
+    small_config.write_text(
+        """split:\n  strategy: locked_group_manifest\n  manifest: small-split.json\npreprocessing:\n  fit_split: train\nselection_split: validation\ntest_usage: final_selected_model_evaluation_once\n""",
+        encoding="utf-8",
+    )
+    write_processed(
+        rows,
+        output,
+        "paderborn",
+        "fault_classification",
+        dataset_version=str(first["version"]),
+        dataset_manifest=dataset_manifest,
+        split_manifest=small_split,
+        chunk_rows=1,
+        processing_config={"trend_policy": "backward_only"},
+    )
+
+    audit = audit_processed_dataset(
+        output,
+        small_split,
+        small_config,
+        require_future_consistency=False,
+    )
+
+    assert audit["status"] == "PASS"
+    assert audit["identity_leakage"] is True
+    assert audit["source_leakage"] is True
+    with np.load(output, allow_pickle=False) as payload:
+        assert payload["sample_ids"].tolist() == ["sample-0", "sample-1", "sample-2"]
