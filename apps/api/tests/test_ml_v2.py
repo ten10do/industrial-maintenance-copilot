@@ -33,6 +33,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
 from prepare_bearing_v2 import prepare_xjtu_bearing  # noqa: E402
+from run_fault_v2 import _candidates as fault_candidates  # noqa: E402
+from run_rul_v2 import _candidates as rul_candidates  # noqa: E402
 
 
 def test_v1_and_v2_feature_schema_are_isolated() -> None:
@@ -246,3 +248,23 @@ def test_grouped_condition_folds_are_deterministic_and_group_safe() -> None:
         np.testing.assert_array_equal(validation, duplicate[1])
         assert not set(groups[train]) & set(groups[validation])
         assert set(conditions[validation]) == {"C0", "C1", "C2"}
+
+
+def test_v2_candidate_grids_match_preregistration() -> None:
+    fault = fault_candidates()
+    rul = rul_candidates()
+
+    assert len(fault) == 24
+    assert {candidate.algorithm for candidate in fault} == {
+        "logistic_regression",
+        "random_forest",
+        "hist_gradient_boosting",
+    }
+    assert len(rul) == 23
+    assert {candidate.algorithm for candidate in rul} == {
+        "ridge",
+        "random_forest",
+        "extra_trees",
+        "gradient_boosting",
+        "hist_gradient_boosting",
+    }
