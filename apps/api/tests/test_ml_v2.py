@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -26,6 +27,11 @@ from app.ml.v2_governance import (
     rul_promotion,
     trajectory_metrics,
 )
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
+
+from prepare_bearing_v2 import prepare_xjtu_bearing  # noqa: E402
 
 
 def test_v1_and_v2_feature_schema_are_isolated() -> None:
@@ -188,3 +194,29 @@ def test_experiment_run_requires_completion_and_records_artifact_hash(
     recorded = json.loads(output.read_text(encoding="utf-8"))
     assert recorded["metrics"] == {"mae": 1.0}
     assert len(recorded["artifact_hash"]) == 64
+
+
+def test_xjtu_v2_preparation_uses_both_channels_and_causal_history(
+    tmp_path: Path,
+) -> None:
+    bearing_dir = tmp_path / "35Hz12kN" / "Bearing1_1"
+    bearing_dir.mkdir(parents=True)
+    for index in range(1, 8):
+        horizontal = np.sin(np.linspace(0, 8 * np.pi, 128)) * index
+        vertical = np.cos(np.linspace(0, 8 * np.pi, 128)) * (index + 1)
+        matrix = np.column_stack([horizontal, vertical])
+        np.savetxt(bearing_dir / f"{index}.csv", matrix, delimiter=",")
+
+    rows = prepare_xjtu_bearing(tmp_path, bearing_dir)
+
+    assert len(rows) == 7
+    assert rows[0].target == pytest.approx(0.1)
+    assert rows[-1].target == 0.0
+    assert "horizontal_rms" in rows[0].values
+    assert "vertical_rms" in rows[0].values
+    assert "cross_channel_correlation" in rows[0].values
+    assert "horizontal_rms_causal_5m_mean" in rows[0].values
+    assert (
+        rows[0].values["horizontal_rms_causal_5m_mean"]
+        == rows[0].values["horizontal_rms"]
+    )
