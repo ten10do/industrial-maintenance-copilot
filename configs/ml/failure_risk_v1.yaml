@@ -1,0 +1,30 @@
+dataset: xjtu-sy
+task_type: failure_risk
+processed_path: ../../data/processed/xjtu_sy_failure_risk_v1.npz
+output_dir: ../../artifacts
+run_name: xjtu-sy-failure-risk-v1
+feature_schema_version: bearing-features-v1
+window_size: 32768
+stride: 32768
+seed: 20260803
+split:
+  strategy: group_shuffle_split
+  group: bearing_id
+  validation_size: 0.2
+  test_size: 0.2
+models:
+  - algorithm: logistic_regression
+    hyperparameters:
+      C: 1.0
+      class_weight: balanced
+  - algorithm: random_forest
+    hyperparameters:
+      n_estimators: 300
+      max_depth: 12
+      min_samples_leaf: 2
+      class_weight: balanced
+minimum_recall: 0.8
+evaluation_metric: pr_auc
+promotion_threshold:
+  minimum_recall: 0.8
+prediction_horizon: next 30 one-minute acquisitions before observed run endpoint

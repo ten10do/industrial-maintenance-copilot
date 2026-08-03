@@ -47,3 +47,13 @@ e2e-output.bak/
 *.backup
 .netlify/
 .neon
+
+# External bearing datasets and generated ML outputs are never committed.
+data/raw/**
+data/interim/**
+data/processed/**
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+artifacts/**
+!artifacts/README.md

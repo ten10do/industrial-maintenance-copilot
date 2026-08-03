@@ -1,0 +1,30 @@
+{
+  "dataset_name": "paderborn",
+  "version": "official-bearing-datacenter-accessed-2026-08-03",
+  "source_url": "https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/data-sets-and-download",
+  "source_type": "official",
+  "license": "Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0); commercial use requires author contact",
+  "license_url": "https://creativecommons.org/licenses/by-nc/4.0/",
+  "citation": "Lessmeier, C.; Kimotho, J. K.; Zimmer, D.; Sextro, W. (2016). Condition Monitoring of Bearing Damage in Electromechanical Drive Systems by Using Motor Current Signals of Electric Motors: A Benchmark Data Set for Data-Driven Classification. PHM Society European Conference.",
+  "publication_url": "https://mb.uni-paderborn.de/fileadmin-mb/kat/PDF/Veroeffentlichungen/20160703_PHME16_CM_bearing.pdf",
+  "download_mode": "manual_official_site",
+  "downloaded_at": null,
+  "sha256": null,
+  "raw_files": 0,
+  "processed_version": "bearing-processed-v1",
+  "feature_schema_version": "bearing-features-v1",
+  "verified_metadata": {
+    "sampling_frequency_hz": 64000,
+    "measurement_duration_seconds": 4,
+    "measurements_per_operating_condition": 20,
+    "operating_conditions": [
+      {"speed_rpm": 1500, "load_torque_nm": 0.7, "radial_force_n": 1000},
+      {"speed_rpm": 900, "load_torque_nm": 0.7, "radial_force_n": 1000},
+      {"speed_rpm": 1500, "load_torque_nm": 0.1, "radial_force_n": 1000},
+      {"speed_rpm": 1500, "load_torque_nm": 0.7, "radial_force_n": 400}
+    ],
+    "bearing_states": "6 healthy, 12 artificially damaged, and 14 naturally damaged bearings",
+    "signals": ["motor_current", "vibration", "speed", "torque", "radial_force", "temperature"]
+  },
+  "notes": "No dataset file or derived sample is redistributed by this repository. Raw checksums and file count are populated only after a user-authorized local download."
+}

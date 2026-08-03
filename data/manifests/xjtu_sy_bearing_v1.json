@@ -1,0 +1,31 @@
+{
+  "dataset_name": "xjtu-sy",
+  "version": "author-repository-accessed-2026-08-03",
+  "source_url": "https://github.com/WangBiaoXJTU/xjtu-sy-bearing-datasets",
+  "source_type": "author_repository",
+  "license": "No explicit LICENSE file or SPDX terms were published in the author repository as verified on 2026-08-03; public research use and citation are requested, redistribution is not assumed",
+  "license_url": null,
+  "citation": "Wang, B.; Lei, Y.; Li, N.; Li, N. (2020). A Hybrid Prognostics Approach for Estimating Remaining Useful Life of Rolling Element Bearings. IEEE Transactions on Reliability, 69(1), 401-412. doi:10.1109/TR.2018.2882682.",
+  "publication_url": "https://doi.org/10.1109/TR.2018.2882682",
+  "download_mode": "manual_author_repository",
+  "downloaded_at": null,
+  "sha256": null,
+  "raw_files": 0,
+  "processed_version": "bearing-processed-v1",
+  "feature_schema_version": "bearing-features-v1",
+  "verified_metadata": {
+    "bearing_count": 15,
+    "operating_condition_count": 3,
+    "sampling_frequency_hz": 25600,
+    "samples_per_acquisition": 32768,
+    "acquisition_duration_seconds": 1.28,
+    "acquisition_interval_seconds": 60,
+    "channels": ["horizontal_vibration", "vertical_vibration"],
+    "operating_conditions": [
+      {"speed_rpm": 2100, "radial_force_kn": 12},
+      {"speed_rpm": 2250, "radial_force_kn": 11},
+      {"speed_rpm": 2400, "radial_force_kn": 10}
+    ]
+  },
+  "notes": "No dataset file or derived sample is redistributed. The final recorded acquisition is used as the observable run endpoint; this assumption must be reported with any trained RUL model."
+}

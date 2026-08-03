@@ -30,8 +30,16 @@ files = [
   "app/db/session.py",
   "app/gateways",
   "app/models/intelligence.py",
+  "app/models/ml.py",
+  "app/ml",
+  "app/schemas/ml.py",
+  "app/api/v1/endpoints/ml.py",
   "app/schemas/intelligence.py",
   "app/services/intelligence_service.py",
   "app/services/simulator.py",
   "app/runtime.py",
 ]
+
+[[tool.mypy.overrides]]
+module = ["joblib", "scipy.*", "sklearn.*"]
+ignore_missing_imports = true

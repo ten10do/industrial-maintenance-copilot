@@ -181,3 +181,13 @@ def test_intelligent_schema_has_foreign_keys_indexes_and_utc_columns(tmp_path):
     assert any("equipment_id" in index["column_names"] for index in telemetry_indexes)
     assert any("collected_at" in index["column_names"] for index in telemetry_indexes)
     assert TelemetryRecord.__table__.c.collected_at.type.timezone is True
+    model_indexes = inspector.get_indexes("ml_model_versions")
+    assert any(
+        index["name"] == "uq_ml_model_active_production_task" and index["unique"]
+        for index in model_indexes
+    )
+    feature_indexes = inspector.get_indexes("ml_feature_definitions")
+    assert any(
+        index["name"] == "uq_ml_feature_schema_name" and index["unique"]
+        for index in feature_indexes
+    )

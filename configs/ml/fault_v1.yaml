@@ -1,0 +1,34 @@
+dataset: paderborn
+task_type: fault_classification
+processed_path: ../../data/processed/paderborn_fault_v1.npz
+output_dir: ../../artifacts
+run_name: paderborn-fault-v1
+feature_schema_version: bearing-features-v1
+window_size: 4096
+stride: 4096
+seed: 20260803
+split:
+  strategy: group_shuffle_split
+  group: bearing_id
+  validation_size: 0.2
+  test_size: 0.2
+models:
+  - algorithm: logistic_regression
+    hyperparameters:
+      C: 1.0
+      class_weight: balanced
+  - algorithm: random_forest
+    hyperparameters:
+      n_estimators: 300
+      max_depth: 12
+      min_samples_leaf: 2
+      class_weight: balanced
+  - algorithm: hist_gradient_boosting
+    hyperparameters:
+      max_iter: 150
+      learning_rate: 0.05
+minimum_recall: 0.7
+evaluation_metric: pr_auc
+promotion_threshold:
+  minimum_recall: 0.7
+prediction_horizon: current 4-second measurement condition; not a calendar failure forecast

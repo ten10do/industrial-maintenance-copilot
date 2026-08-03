@@ -42,6 +42,12 @@ INTELLIGENT_MAINTENANCE_TABLES = (
     "maintenance_verifications",
     "agent_runs",
     "tool_invocations",
+    "ml_dataset_versions",
+    "ml_feature_definitions",
+    "ml_training_runs",
+    "ml_model_versions",
+    "ml_model_metrics",
+    "ml_prediction_records",
 )
 
 _INTELLIGENCE_DROP_ORDER = tuple(reversed(INTELLIGENT_MAINTENANCE_TABLES))
@@ -128,12 +134,36 @@ def upgrade_schema(engine: Engine) -> list[str]:
                         )
                     )
 
+        if "ml_dataset_versions" in table_names:
+            dataset_columns = {
+                column["name"]
+                for column in inspector.get_columns("ml_dataset_versions")
+            }
+            if "processed_sha256" not in dataset_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE ml_dataset_versions "
+                        "ADD COLUMN processed_sha256 VARCHAR(64)"
+                    )
+                )
+                applied.append("ml_dataset_versions.processed_sha256")
+
     # 集中导入模型，确保 metadata 包含所有旧工单与智能运维表。
     import app.models  # noqa: F401
     from app.db.session import Base
 
     before_create = set(inspect(engine).get_table_names())
     Base.metadata.create_all(bind=engine)
+    for table_name, index_name in (
+        ("ml_model_versions", "uq_ml_model_active_production_task"),
+        ("ml_feature_definitions", "uq_ml_feature_schema_name"),
+    ):
+        required_index = next(
+            index
+            for index in Base.metadata.tables[table_name].indexes
+            if index.name == index_name
+        )
+        required_index.create(bind=engine, checkfirst=True)
     after_create = set(inspect(engine).get_table_names())
     if set(INTELLIGENT_MAINTENANCE_TABLES) - before_create and set(
         INTELLIGENT_MAINTENANCE_TABLES

@@ -253,6 +253,16 @@ PowerShell 请使用 `$env:NAME='value'` 设置对应环境变量。
 - 规则健康分与剩余寿命是确定性/统计演示值；LLM 仅负责解释，不替代 OEM 诊断。
 - 不提供生产级多租户隔离。
 
+## Predictive ML Pipeline
+
+The repository now includes a deterministic bearing fault-classification,
+failure-risk, and RUL pipeline with group-safe evaluation, a verified artifact
+bundle, model registry, and online prediction records. External datasets and real
+model artifacts are not committed. See
+[docs/real-predictive-ml-pipeline.md](docs/real-predictive-ml-pipeline.md) for the
+official dataset sources, license constraints, reproducible workflow, and current
+limitations.
+
 ## Roadmap
 
 - 对象存储与附件持久化
