@@ -60,9 +60,20 @@ def test_dual_channel_features_include_real_cross_channel_statistics() -> None:
     features = extract_dual_channel_features(horizontal, vertical, 25_600)
 
     assert features["cross_channel_correlation"] == pytest.approx(1.0)
-    assert features["cross_rms_ratio_h_over_v"] == pytest.approx(0.5)
+    assert features["cross_rms_ratio_first_over_second"] == pytest.approx(0.5)
     assert "horizontal_envelope_kurtosis" in features
     assert "vertical_spectral_entropy" in features
+
+    current = extract_dual_channel_features(
+        horizontal,
+        vertical,
+        25_600,
+        first_name="phase_current_1",
+        second_name="phase_current_2",
+        cross_prefix="current_cross",
+    )
+    assert "phase_current_1_rms" in current
+    assert current["current_cross_channel_correlation"] == pytest.approx(1.0)
 
 
 def test_condition_baseline_uses_only_rows_passed_to_fit() -> None:

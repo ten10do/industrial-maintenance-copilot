@@ -75,7 +75,11 @@ def main() -> None:
         "feature_version": FEATURE_SCHEMA_VERSION_V2,
         "window_size": args.window_size if args.dataset == "paderborn" else 32768,
         "stride": args.stride if args.dataset == "paderborn" else 32768,
-        "paderborn_channel": "vibration_1",
+        "paderborn_channels": [
+            "vibration_1",
+            "phase_current_1",
+            "phase_current_2",
+        ],
         "xjtu_channels": ["horizontal", "vertical"],
         "causal_horizons_minutes": [5, 15, 30, 60],
     }
@@ -151,6 +155,14 @@ def prepare_paderborn_bearing(
         condition = "_".join(parts[:3])
         measurement = int(parts[-1])
         signal = v1_preparation._load_paderborn_channel(path, "vibration_1")
+        phase_current_1 = v1_preparation._load_paderborn_channel(
+            path, "phase_current_1"
+        )
+        phase_current_2 = v1_preparation._load_paderborn_channel(
+            path, "phase_current_2"
+        )
+        if not (len(signal) == len(phase_current_1) == len(phase_current_2)):
+            raise ValueError(f"Paderborn high-rate channels do not align: {path}")
         history = histories.setdefault(condition, [])
         measurement_start = datetime(2000, 1, 1, tzinfo=UTC) + timedelta(
             seconds=4 * (measurement - 1)
@@ -178,6 +190,16 @@ def prepare_paderborn_bearing(
             values = dict(vector.values)
             values.update(extract_envelope_features(window_signal, 64_000))
             values.update(extract_spectral_features_v2(window_signal, 64_000))
+            values.update(
+                extract_dual_channel_features(
+                    phase_current_1[start : start + window_size],
+                    phase_current_2[start : start + window_size],
+                    64_000,
+                    first_name="phase_current_1",
+                    second_name="phase_current_2",
+                    cross_prefix="current_cross",
+                )
+            )
             source_file = path.relative_to(raw_dir).as_posix()
             rows.append(
                 V2Row(

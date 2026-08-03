@@ -103,6 +103,10 @@ def extract_dual_channel_features(
     horizontal: Sequence[float] | NDArray[np.float64],
     vertical: Sequence[float] | NDArray[np.float64],
     sampling_rate_hz: float,
+    *,
+    first_name: str = "horizontal",
+    second_name: str = "vertical",
+    cross_prefix: str = "cross",
 ) -> dict[str, float]:
     horizontal_values = _validated_signal(horizontal)
     vertical_values = _validated_signal(vertical)
@@ -110,27 +114,31 @@ def extract_dual_channel_features(
         raise ValueError("horizontal and vertical channels must align")
     horizontal_features = _channel_features(horizontal_values, sampling_rate_hz)
     vertical_features = _channel_features(vertical_values, sampling_rate_hz)
+    if not first_name or not second_name or not cross_prefix:
+        raise ValueError("channel feature prefixes must be non-empty")
     result = {
-        f"horizontal_{name}": value for name, value in horizontal_features.items()
+        f"{first_name}_{name}": value for name, value in horizontal_features.items()
     }
     result.update(
-        {f"vertical_{name}": value for name, value in vertical_features.items()}
+        {f"{second_name}_{name}": value for name, value in vertical_features.items()}
     )
     horizontal_energy = float(np.mean(np.square(horizontal_values)))
     vertical_energy = float(np.mean(np.square(vertical_values)))
     result.update(
         {
-            "cross_rms_ratio_h_over_v": horizontal_features["rms"]
+            f"{cross_prefix}_rms_ratio_first_over_second": horizontal_features["rms"]
             / max(vertical_features["rms"], _EPSILON),
-            "cross_energy_ratio_h_over_v": horizontal_energy
+            f"{cross_prefix}_energy_ratio_first_over_second": horizontal_energy
             / max(vertical_energy, _EPSILON),
-            "cross_kurtosis_ratio_h_over_v": horizontal_features["kurtosis"]
+            f"{cross_prefix}_kurtosis_ratio_first_over_second": horizontal_features[
+                "kurtosis"
+            ]
             / max(abs(vertical_features["kurtosis"]), _EPSILON),
-            "cross_spectral_energy_ratio_h_over_v": horizontal_features[
+            f"{cross_prefix}_spectral_energy_ratio_first_over_second": horizontal_features[
                 "spectral_energy"
             ]
             / max(vertical_features["spectral_energy"], _EPSILON),
-            "cross_channel_correlation": _finite(
+            f"{cross_prefix}_channel_correlation": _finite(
                 float(np.corrcoef(horizontal_values, vertical_values)[0, 1])
             ),
         }
