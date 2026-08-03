@@ -79,11 +79,23 @@ def online_inference(
     equipment = db.get(Equipment, payload.equipment_id)
     if equipment is None:
         raise HTTPException(status_code=404, detail="equipment not found")
-    registered = active_model(db, payload.task_type)
+    registered = (
+        db.get(ModelVersion, payload.model_version_id)
+        if payload.model_version_id is not None
+        else active_model(db, payload.task_type)
+    )
     if registered is None:
         raise HTTPException(
             status_code=409,
             detail="no production ML model for this task; operational rules remain available",
+        )
+    if registered.task_type != payload.task_type or registered.status not in {
+        "staging",
+        "production",
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail="explicit model must match the task and be staging or production",
         )
     try:
         artifact = load_artifact_bundle(
@@ -132,7 +144,11 @@ def online_inference(
         top_contributing_features=top_features or None,
     )
     db.add(record)
-    if result.prediction_type != "rul" and result.probability is not None:
+    if (
+        registered.is_production
+        and result.prediction_type != "rul"
+        and result.probability is not None
+    ):
         db.add(
             RiskPrediction(
                 equipment_id=equipment.id,

@@ -22,6 +22,7 @@ Dashboard 合成一个数。
 - 官方数据页：<https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/data-sets-and-download>
 - 官方论文：<https://mb.uni-paderborn.de/fileadmin-mb/kat/PDF/Veroeffentlichungen/20160703_PHME16_CM_bearing.pdf>
 - 数据许可：CC BY-NC 4.0，非商业学术使用需署名；商业使用需联系作者。
+- 仅用于学习、研究和作品集实验，不得据此宣称可直接商业使用。
 - 数据包含 6 个健康、12 个人工损伤、14 个寿命试验产生的真实损伤状态；测试台
   同步测量电流、振动、转速、扭矩、径向力和温度。
 - 官方论文描述电流和振动以 64 kHz 采样；每种工况有 20 次、每次 4 秒测量。
@@ -136,7 +137,10 @@ python -m app.ml.register_model --artifact ../../artifacts/<model-version> --man
 一个 active production。`/api/v1/ml/models/rollback`
 回滚到指定历史版本，同一 task 始终只保留一个 active production。在线
 `/api/v1/ml/inference` 会校验文件存在、bundle SHA256、model version 和 feature
-schema，记录 `PredictionRecord`；分类/风险输出也进入现有 RiskPrediction 列表。
+schema，记录 `PredictionRecord`。默认推理只选择 active production；本地验收可显式
+传入 `model_version_id` 调用同任务 staging 模型，但 staging 结果只写
+`PredictionRecord`，不会进入现有 `RiskPrediction` 业务列表。只有 production 的
+分类/风险输出会进入该业务列表，避免实验模型改变运维决策状态。
 
 joblib 是 pickle-based 格式，因此只能加载受信训练流程产生的 bundle。
 

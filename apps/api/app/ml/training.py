@@ -31,7 +31,11 @@ from app.ml.evaluation import (
     evaluate_rul,
 )
 from app.ml.selection import CandidateMetrics, select_failure_model, select_rul_model
-from app.ml.splitting import GroupedSplit, grouped_train_validation_test_split
+from app.ml.splitting import (
+    GroupedSplit,
+    group_split_audit,
+    grouped_train_validation_test_split,
+)
 
 TaskType = Literal["failure_risk", "fault_classification", "rul"]
 
@@ -57,6 +61,7 @@ class TrainingOutcome:
     validation_metrics: dict[str, Any]
     test_metrics: dict[str, Any]
     split: GroupedSplit
+    leakage_audit: dict[str, object]
 
 
 def load_prepared_dataset(path: Path, expected_dataset: str) -> PreparedDataset:
@@ -114,7 +119,9 @@ def train_from_config(
         or config.get("task_type") != expected_task
     ):
         raise ValueError("CLI dataset/task does not match experiment config")
-    dataset = load_prepared_dataset(Path(str(config["processed_path"])), dataset_name)
+    dataset = load_prepared_dataset(
+        _config_relative_path(config_path, config["processed_path"]), dataset_name
+    )
     seed = int(config["seed"])
     split_config = cast(dict[str, Any], config["split"])
     split = grouped_train_validation_test_split(
@@ -123,6 +130,7 @@ def train_from_config(
         validation_size=float(split_config["validation_size"]),
         seed=seed,
     )
+    leakage_audit = group_split_audit(split, dataset.groups).as_dict()
     candidates: list[tuple[str, BaseEstimator, StandardScaler, dict[str, Any]]] = []
     validation_records: list[CandidateMetrics] = []
     for model_config in cast(list[dict[str, Any]], config["models"]):
@@ -178,7 +186,7 @@ def train_from_config(
     )
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     version = f"{expected_task}-{name}-{timestamp}"
-    output_dir = Path(str(config["output_dir"])) / version
+    output_dir = _config_relative_path(config_path, config["output_dir"]) / version
     validation_metrics = dict(selected.metrics)
     validation_metrics["permutation_importance"] = [
         {"feature": feature, "importance": float(value)}
@@ -213,6 +221,15 @@ def train_from_config(
                 ),
                 "test": sorted({dataset.groups[index] for index in split.test}),
             },
+            "leakage_audit": leakage_audit,
+            "fit_provenance": {
+                "preprocessor_fit_split": "train",
+                "preprocessor_fit_samples": int(scaler.n_samples_seen_),
+                "model_fit_split": "train",
+                "feature_selector": "not_configured",
+                "model_selection_split": "validation",
+                "test_set_usage": "final_selected_model_evaluation_only",
+            },
             "config_sha256": hashlib.sha256(config_path.read_bytes()).hexdigest(),
             "config_path": str(config_path),
             "run_name": config.get("run_name", version),
@@ -240,6 +257,7 @@ def train_from_config(
         validation_metrics=validation_metrics,
         test_metrics=test_metrics,
         split=split,
+        leakage_audit=leakage_audit,
     )
 
 
@@ -250,6 +268,7 @@ def safe_summary(outcome: TrainingOutcome, dataset: str) -> str:
             "train_samples": len(outcome.split.train),
             "validation_samples": len(outcome.split.validation),
             "test_samples": len(outcome.split.test),
+            "leakage_audit": outcome.leakage_audit,
             "algorithm": outcome.algorithm,
             "validation_metrics": outcome.validation_metrics,
             "test_metrics": outcome.test_metrics,
@@ -328,6 +347,13 @@ def _git_commit() -> str:
 
 def _optional_float(value: Any) -> float | None:
     return None if value is None else float(value)
+
+
+def _config_relative_path(config_path: Path, value: Any) -> Path:
+    configured = Path(str(value))
+    if configured.is_absolute():
+        return configured
+    return (config_path.resolve().parent / configured).resolve()
 
 
 def _promotion_decision(

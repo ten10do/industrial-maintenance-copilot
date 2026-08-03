@@ -241,4 +241,16 @@ prediction_horizon: synthetic test horizon
     group_sets = [set(items) for items in metadata["split_groups"].values()]
     assert not group_sets[0] & group_sets[1]
     assert not group_sets[0] & group_sets[2]
+    assert metadata["leakage_audit"]["passed"] is True
+    assert metadata["leakage_audit"]["train_validation_intersection"] == []
+    assert metadata["leakage_audit"]["train_test_intersection"] == []
+    assert metadata["leakage_audit"]["validation_test_intersection"] == []
+    assert metadata["fit_provenance"] == {
+        "feature_selector": "not_configured",
+        "model_fit_split": "train",
+        "model_selection_split": "validation",
+        "preprocessor_fit_samples": len(outcome.split.train),
+        "preprocessor_fit_split": "train",
+        "test_set_usage": "final_selected_model_evaluation_only",
+    }
     assert "test" in json.loads((outcome.artifact_path / "metrics.json").read_text())

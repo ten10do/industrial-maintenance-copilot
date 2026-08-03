@@ -16,6 +16,35 @@ class GroupedSplit:
     test: NDArray[np.int64]
 
 
+@dataclass(frozen=True)
+class LeakageAudit:
+    train_groups: tuple[str, ...]
+    validation_groups: tuple[str, ...]
+    test_groups: tuple[str, ...]
+    train_validation_overlap: tuple[str, ...]
+    train_test_overlap: tuple[str, ...]
+    validation_test_overlap: tuple[str, ...]
+
+    @property
+    def passed(self) -> bool:
+        return not (
+            self.train_validation_overlap
+            or self.train_test_overlap
+            or self.validation_test_overlap
+        )
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "train_bearings": list(self.train_groups),
+            "validation_bearings": list(self.validation_groups),
+            "test_bearings": list(self.test_groups),
+            "train_validation_intersection": list(self.train_validation_overlap),
+            "train_test_intersection": list(self.train_test_overlap),
+            "validation_test_intersection": list(self.validation_test_overlap),
+            "passed": self.passed,
+        }
+
+
 def grouped_train_validation_test_split(
     groups: list[str],
     *,
@@ -64,9 +93,21 @@ def group_kfold_indices(
 
 
 def assert_disjoint_groups(split: GroupedSplit, groups: list[str]) -> None:
+    audit = group_split_audit(split, groups)
+    if not audit.passed:
+        raise AssertionError("bearing groups overlap across dataset splits")
+
+
+def group_split_audit(split: GroupedSplit, groups: list[str]) -> LeakageAudit:
     group_array = np.asarray(groups)
     train = set(group_array[split.train].tolist())
     validation = set(group_array[split.validation].tolist())
     test = set(group_array[split.test].tolist())
-    if train & validation or train & test or validation & test:
-        raise AssertionError("bearing groups overlap across dataset splits")
+    return LeakageAudit(
+        train_groups=tuple(sorted(train)),
+        validation_groups=tuple(sorted(validation)),
+        test_groups=tuple(sorted(test)),
+        train_validation_overlap=tuple(sorted(train & validation)),
+        train_test_overlap=tuple(sorted(train & test)),
+        validation_test_overlap=tuple(sorted(validation & test)),
+    )

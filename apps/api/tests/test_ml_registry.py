@@ -13,7 +13,7 @@ from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features
 from app.ml.registry import promote_model, rollback_model
 from app.ml.types import TelemetryWindow
 from app.models.intelligence import RiskPrediction
-from app.models.ml import DatasetVersion, ModelVersion, TrainingRun
+from app.models.ml import DatasetVersion, ModelVersion, PredictionRecord, TrainingRun
 
 
 def _registered_model(
@@ -213,3 +213,24 @@ def test_online_inference_uses_verified_production_model_and_records_lineage(
     risk = db.query(RiskPrediction).one()
     assert risk.model_version == "online-model-v1"
     assert risk.is_mock is False
+
+    model.status = "staging"
+    model.is_production = False
+    db.commit()
+    staging_payload = {
+        "equipment_id": equipment.id,
+        "bearing_id": "synthetic-bearing",
+        "task_type": "failure_risk",
+        "model_version_id": model.id,
+        "signal": signal.tolist(),
+        "sampling_rate_hz": 256,
+        "started_at": now.isoformat(),
+        "ended_at": (now + timedelta(seconds=1)).isoformat(),
+        "context": {"speed_rpm": 1500.0},
+    }
+    staging_response = client.post(
+        "/api/v1/ml/inference", headers=auth_supervisor, json=staging_payload
+    )
+    assert staging_response.status_code == 200, staging_response.text
+    assert db.query(PredictionRecord).count() == 2
+    assert db.query(RiskPrediction).count() == 1

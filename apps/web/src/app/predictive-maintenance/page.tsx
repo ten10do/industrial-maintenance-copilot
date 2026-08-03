@@ -6,7 +6,15 @@ import {
   ArrowRight, BookOpenCheck, BrainCircuit, CalendarClock, PackageCheck, ShieldAlert, Sparkles, UserRoundCheck,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { listAnomalies, listDiagnoses, listMaintenanceRecommendations, listPredictions } from '@/lib/api';
+import {
+  listAnomalies,
+  listDiagnoses,
+  listMaintenanceRecommendations,
+  listMLModels,
+  listMLPredictionRecords,
+  listPredictions,
+} from '@/lib/api';
+import type { MLModelVersion, MLPredictionRecord } from '@/lib/types';
 
 const FAILURE_LABELS: Record<string, string> = {
   bearing_wear: '轴承磨损',
@@ -26,16 +34,27 @@ export default function PredictiveMaintenancePage() {
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [anomalies, setAnomalies] = useState<any[]>([]);
   const [diagnoses, setDiagnoses] = useState<any[]>([]);
+  const [mlModels, setMLModels] = useState<MLModelVersion[]>([]);
+  const [mlPredictions, setMLPredictions] = useState<MLPredictionRecord[]>([]);
   const [riskFilter, setRiskFilter] = useState('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([listPredictions(), listMaintenanceRecommendations(), listAnomalies({ status: 'open' }), listDiagnoses()])
-      .then(([predictionData, recommendationData, anomalyData, diagnosisData]) => {
+    Promise.all([
+      listPredictions(),
+      listMaintenanceRecommendations(),
+      listAnomalies({ status: 'open' }),
+      listDiagnoses(),
+      listMLModels(),
+      listMLPredictionRecords(),
+    ])
+      .then(([predictionData, recommendationData, anomalyData, diagnosisData, modelData, mlPredictionData]) => {
         setPredictions(predictionData);
         setRecommendations(recommendationData);
         setAnomalies(anomalyData);
         setDiagnoses(diagnosisData);
+        setMLModels(modelData);
+        setMLPredictions(mlPredictionData);
       })
       .catch((error) => toast.error(error.message))
       .finally(() => setLoading(false));
@@ -67,6 +86,78 @@ export default function PredictiveMaintenancePage() {
         <Summary label="维护策略" value={recommendations.length} icon={<Sparkles size={18} />} tone="blue" />
         <Summary label="自动工单" value={recommendations.filter((item) => item.auto_work_order_id).length} icon={<UserRoundCheck size={18} />} tone="green" />
       </div>
+
+      <section className="space-y-3" data-testid="ml-observability">
+        <div>
+          <h2 className="font-semibold">ML Model Registry &amp; Inference Observability</h2>
+          <p className="text-xs text-muted mt-1">
+            Operational Health Score and rule estimates remain separate from ML degradation, probability, and RUL outputs.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Registered model versions</h3>
+              <span className="badge bg-purple-500/15 text-purple-200">{mlModels.length}</span>
+            </div>
+            {mlModels.slice(0, 6).map((model) => (
+              <div key={model.id} className="rounded-lg border border-card-border bg-white/[0.02] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono text-xs break-all">{model.version}</span>
+                  <span className={`badge ${model.is_production ? 'bg-green-500/15 text-green-200' : 'bg-blue-500/15 text-blue-200'}`}>
+                    {model.status}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-muted">
+                  <span>{model.task_type}</span>
+                  <span>{model.algorithm}</span>
+                  <span>Dataset #{model.dataset_version_id}</span>
+                  <span>{model.feature_schema_version}</span>
+                </div>
+              </div>
+            ))}
+            {!mlModels.length && (
+              <p className="text-sm text-muted py-4">No registered ML model. Synthetic rule estimates are not presented as trained model results.</p>
+            )}
+          </div>
+
+          <div className="card space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold">Latest deterministic ML predictions</h3>
+              <span className="badge bg-blue-500/15 text-blue-200">{mlPredictions.length}</span>
+            </div>
+            {mlPredictions.slice(0, 6).map((prediction) => (
+              <div key={prediction.id} className="rounded-lg border border-card-border bg-white/[0.02] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{prediction.prediction_type}</span>
+                  <span className="font-mono text-xs">Model #{prediction.model_version_id}</span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <Mini label="Prediction" value={prediction.prediction} />
+                  <Mini label="Failure P" value={formatProbability(prediction.probability)} />
+                  <Mini label="ML degradation" value={formatDecimal(prediction.degradation_index)} />
+                  <Mini label="Estimated RUL" value={prediction.rul_hours == null ? '--' : `${prediction.rul_hours.toFixed(1)}h`} />
+                </div>
+                <div className="mt-2 text-xs text-muted">
+                  {prediction.feature_schema_version} · Window {formatDate(prediction.feature_timestamp_start)}–{formatDate(prediction.feature_timestamp_end)}
+                </div>
+                {!!prediction.top_contributing_features?.length && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" aria-label="Top contributing features">
+                    {prediction.top_contributing_features.slice(0, 5).map((feature) => (
+                      <span key={feature.name} className="badge bg-yellow-500/10 text-yellow-200">
+                        {feature.name}: {feature.contribution.toFixed(3)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+            {!mlPredictions.length && (
+              <p className="text-sm text-muted py-4">No ML PredictionRecord exists. A production/staging model is not fabricated for this demo.</p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="space-y-3">
         <div><h2 className="font-semibold">风险预测队列</h2><p className="text-xs text-muted mt-1">剩余寿命与失效概率为规则模型演示值，不替代 OEM 诊断</p></div>
@@ -174,4 +265,12 @@ function riskColor(level: string) {
 function formatDate(value?: string) {
   if (!value) return '--';
   return new Date(value).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+}
+
+function formatProbability(value?: number) {
+  return value == null ? '--' : `${(value * 100).toFixed(1)}%`;
+}
+
+function formatDecimal(value?: number) {
+  return value == null ? '--' : value.toFixed(3);
 }

@@ -11,6 +11,7 @@ class OnlineInferenceIn(BaseModel):
     equipment_id: int
     bearing_id: str = Field(min_length=1, max_length=128)
     task_type: str = Field(pattern="^(failure_risk|fault_classification|rul)$")
+    model_version_id: int | None = Field(default=None, gt=0)
     signal: list[float] = Field(min_length=32)
     sampling_rate_hz: float = Field(gt=0)
     started_at: datetime

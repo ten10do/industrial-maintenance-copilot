@@ -271,3 +271,44 @@ export interface SimulatorStatus {
   generated_points: number;
   auto_create_work_orders: boolean;
 }
+
+export interface MLModelVersion {
+  id: number;
+  name: string;
+  task_type: 'failure_risk' | 'fault_classification' | 'rul';
+  algorithm: string;
+  version: string;
+  dataset_version_id: number;
+  training_run_id: number;
+  feature_schema_version: string;
+  git_commit_sha: string;
+  artifact_sha256: string;
+  status: 'registered' | 'candidate' | 'staging' | 'production' | 'archived';
+  is_production: boolean;
+  created_at: string;
+}
+
+export interface MLFeatureContribution {
+  name: string;
+  contribution: number;
+}
+
+export interface MLPredictionRecord {
+  id: number;
+  equipment_id: number;
+  model_version_id: number;
+  prediction_type: 'failure_risk' | 'fault_classification' | 'rul';
+  prediction: string;
+  prediction_value?: number;
+  probability?: number;
+  confidence: number;
+  prediction_horizon?: string;
+  rul_hours?: number;
+  degradation_index?: number;
+  feature_timestamp_start: string;
+  feature_timestamp_end: string;
+  feature_schema_version: string;
+  probabilities?: Record<string, number>;
+  top_contributing_features?: MLFeatureContribution[];
+  created_at: string;
+}

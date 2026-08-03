@@ -1,4 +1,4 @@
-import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse } from './types';
+import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord } from './types';
 
 const BASE = '/api/v1';
 
@@ -214,6 +214,13 @@ export async function listAnomalies(params?: Record<string, string>) {
 }
 export async function listPredictions() {
   return request<any[]>('/intelligence/predictions');
+}
+export async function listMLModels(taskType?: MLModelVersion['task_type']) {
+  const qs = taskType ? `?task_type=${encodeURIComponent(taskType)}` : '';
+  return request<MLModelVersion[]>(`/ml/models${qs}`);
+}
+export async function listMLPredictionRecords() {
+  return request<MLPredictionRecord[]>('/ml/predictions');
 }
 export async function listDiagnoses() {
   return request<any[]>('/intelligence/diagnoses');
