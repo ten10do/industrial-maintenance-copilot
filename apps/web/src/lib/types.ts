@@ -2,7 +2,7 @@ export type Role = 'admin' | 'supervisor' | 'technician';
 export type WorkOrderStatus = 'pending_dispatch' | 'assigned' | 'accepted' | 'in_progress' | 'pending_acceptance' | 'completed' | 'cancelled' | 'returned' | 'paused';
 export type Priority = 'P1' | 'P2' | 'P3' | 'P4';
 export type LogType = 'inspect' | 'diagnose' | 'repair' | 'replace' | 'test' | 'note';
-export type EquipmentStatus = 'running' | 'fault' | 'under_repair' | 'stopped' | 'scrapped';
+export type EquipmentStatus = 'running' | 'idle' | 'warning' | 'fault' | 'maintenance' | 'offline' | 'under_repair' | 'stopped' | 'scrapped';
 export type Urgency = 'low' | 'medium' | 'high' | 'critical';
 export type FaultReportStatus = 'pending' | 'converted' | 'closed';
 
@@ -232,4 +232,42 @@ export interface WorkOrderReport {
   generation_method: string;
   version: number;
   is_mock: boolean;
+}
+
+export type SimulationScenario =
+  | 'normal'
+  | 'temperature_rise'
+  | 'vibration_spike'
+  | 'current_overload'
+  | 'bearing_wear'
+  | 'voltage_fluctuation'
+  | 'sensor_disconnect'
+  | 'composite_anomaly';
+
+export interface TelemetryRecord {
+  id: number;
+  equipment_id: number;
+  collected_at: string;
+  vibration_rms?: number;
+  bearing_temperature?: number;
+  motor_current?: number;
+  motor_voltage?: number;
+  rotational_speed?: number;
+  load_ratio?: number;
+  ambient_temperature?: number;
+  cumulative_runtime_hours: number;
+  scenario: SimulationScenario;
+  quality: number;
+  is_anomaly: boolean;
+  anomaly_metrics?: string[];
+}
+
+export interface SimulatorStatus {
+  running: boolean;
+  interval_seconds: number;
+  scenario: SimulationScenario;
+  seed: number;
+  equipment_ids: number[];
+  generated_points: number;
+  auto_create_work_orders: boolean;
 }

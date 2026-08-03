@@ -3,7 +3,8 @@ import { ReactNode, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
-  LayoutDashboard, AlertTriangle, Wrench, Cpu, BookOpen, Bot, Settings, Menu, X, LogOut, ChevronRight
+  LayoutDashboard, AlertTriangle, Wrench, Cpu, BookOpen, Bot, Settings, Menu, X, LogOut,
+  Activity, BrainCircuit, ShieldCheck
 } from 'lucide-react';
 
 interface NavItem {
@@ -14,12 +15,15 @@ interface NavItem {
 }
 
 const ALL_NAV_ITEMS: NavItem[] = [
-  { label: '仪表盘', href: '/dashboard', icon: <LayoutDashboard size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '智能运维驾驶舱', href: '/dashboard', icon: <LayoutDashboard size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '实时状态监测', href: '/monitoring', icon: <Activity size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '预测性维护', href: '/predictive-maintenance', icon: <BrainCircuit size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '设备资产中心', href: '/equipment', icon: <Cpu size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '故障上报', href: '/fault-reports', icon: <AlertTriangle size={18} />, roles: ['admin', 'supervisor', 'technician'] },
-  { label: '维修工单', href: '/work-orders', icon: <Wrench size={18} />, roles: ['admin', 'supervisor', 'technician'] },
-  { label: '设备台账', href: '/equipment', icon: <Cpu size={18} />, roles: ['admin', 'supervisor', 'technician'] },
-  { label: '知识库', href: '/knowledge', icon: <BookOpen size={18} />, roles: ['admin', 'supervisor', 'technician'] },
-  { label: 'AI 助手', href: '/copilot', icon: <Bot size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '智能工单中心', href: '/work-orders', icon: <Wrench size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '操作审批中心', href: '/approvals', icon: <ShieldCheck size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '运维知识中心', href: '/knowledge', icon: <BookOpen size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '运维 Agent', href: '/copilot', icon: <Bot size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '系统管理', href: '/admin', icon: <Settings size={18} />, roles: ['admin'] },
 ];
 
@@ -53,7 +57,10 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           <div className="w-8 h-8 rounded-lg bg-primary/20 flex items-center justify-center">
             <Wrench size={16} className="text-primary-400" />
           </div>
-          <span className="font-bold text-sm">运维工单 Copilot</span>
+          <div className="min-w-0">
+            <span className="block font-bold text-sm leading-tight">工业智能运维平台</span>
+            <span className="block text-[10px] text-muted mt-0.5">AI Agent · Predictive Maintenance</span>
+          </div>
         </div>
         {user && (
           <div className="mt-2 flex items-center justify-between">
@@ -79,8 +86,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
             >
               {item.icon}
               <span>{item.label}</span>
-              {item.label === '知识库' && (
-                <span className="ml-auto badge text-[10px] bg-yellow-500/20 text-yellow-400">建设中</span>
+              {item.href === '/monitoring' && (
+                <span className="ml-auto w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" aria-label="在线" />
               )}
             </button>
           );
@@ -106,7 +113,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         <button onClick={() => setMobileOpen(!mobileOpen)} className="btn btn-outline btn-sm p-1.5">
           {mobileOpen ? <X size={18} /> : <Menu size={18} />}
         </button>
-        <span className="text-sm font-medium">运维工单 Copilot</span>
+        <span className="text-sm font-medium">工业智能运维平台</span>
         <button onClick={handleLogout} className="btn btn-outline btn-sm p-1.5">
           <LogOut size={16} />
         </button>

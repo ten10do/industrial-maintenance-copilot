@@ -5,20 +5,90 @@ services:
     rootDir: apps/api
     dockerfilePath: ./Dockerfile
     plan: free
-    healthCheckPath: /health
+    healthCheckPath: /ready
     autoDeployTrigger: commit
     envVars:
       - key: APP_ENV
-        value: demo
+        value: production
       - key: DATABASE_URL
         sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: industrial-maintenance-redis
+          property: connectionString
       - key: SECRET_KEY
         generateValue: true
       - key: FRONTEND_URL
         sync: false
       - key: AI_ENABLED
-        value: "false"
-      - key: SEED_ON_STARTUP
         value: "true"
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: SEED_ON_STARTUP
+        value: "false"
       - key: STORAGE_TYPE
         value: local
+
+  - type: worker
+    name: industrial-maintenance-worker
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m app.runtime worker
+    plan: starter
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: industrial-maintenance-redis
+          property: connectionString
+      - key: SECRET_KEY
+        sync: false
+      - key: AI_ENABLED
+        value: "true"
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: SEED_ON_STARTUP
+        value: "false"
+
+  - type: worker
+    name: industrial-maintenance-scheduler
+    runtime: docker
+    rootDir: apps/api
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python -m app.runtime scheduler
+    plan: starter
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: industrial-maintenance-redis
+          property: connectionString
+      - key: SECRET_KEY
+        sync: false
+      - key: AI_ENABLED
+        value: "true"
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        sync: false
+      - key: SEED_ON_STARTUP
+        value: "false"
+
+  - type: keyvalue
+    name: industrial-maintenance-redis
+    plan: free
+    ipAllowList: []

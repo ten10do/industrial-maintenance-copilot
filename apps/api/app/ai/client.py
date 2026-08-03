@@ -1,11 +1,14 @@
 """AI 客户端：OpenAI 兼容接口适配层，含 Mock 降级。"""
+
 from __future__ import annotations
 
 import json
 import time
-from typing import Any
+from contextlib import suppress
+from typing import Any, Protocol
 
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
 
@@ -24,7 +27,9 @@ class LLMClient:
     def is_mock(self) -> bool:
         return not self.enabled
 
-    def chat(self, messages: list[dict], json_mode: bool = False) -> dict[str, Any]:
+    def chat(
+        self, messages: list[dict[str, Any]], json_mode: bool = False
+    ) -> dict[str, Any]:
         """返回 {'content': str, 'is_mock': bool, 'model': str, 'error': str|None}。"""
         if not self.enabled:
             return {
@@ -33,7 +38,10 @@ class LLMClient:
                 "model": "mock",
                 "error": None,
             }
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": messages,
@@ -44,7 +52,9 @@ class LLMClient:
         try:
             start = time.time()
             with httpx.Client(timeout=self.timeout) as client:
-                resp = client.post(f"{self.api_base}/chat/completions", headers=headers, json=payload)
+                resp = client.post(
+                    f"{self.api_base}/chat/completions", headers=headers, json=payload
+                )
                 resp.raise_for_status()
                 data = resp.json()
             content = data["choices"][0]["message"]["content"]
@@ -64,7 +74,7 @@ class LLMClient:
                 "error": str(e),
             }
 
-    def parse_json(self, content: str) -> dict | None:
+    def parse_json(self, content: str) -> dict[str, Any] | None:
         """安全解析模型返回的 JSON。"""
         if not content:
             return None
@@ -83,7 +93,18 @@ class LLMClient:
             return None
 
 
-llm_client = LLMClient()
+class LLMProvider(Protocol):
+    enabled: bool
+    model: str
+
+    def chat(
+        self, messages: list[dict[str, Any]], json_mode: bool = False
+    ) -> dict[str, Any]: ...
+
+    def parse_json(self, content: str) -> dict[str, Any] | None: ...
+
+
+llm_client: LLMProvider = LLMClient()
 
 
 def record_ai_interaction(
@@ -106,7 +127,11 @@ def record_ai_interaction(
             itype = AIInteractionTypeEnum(interaction_type)
         except ValueError:
             itype = AIInteractionTypeEnum.ask  # type: ignore[assignment]
-        status = AIStatusEnum.mock if is_mock else (AIStatusEnum.failed if error else AIStatusEnum.success)
+        status = (
+            AIStatusEnum.mock
+            if is_mock
+            else (AIStatusEnum.failed if error else AIStatusEnum.success)
+        )
         rec = AIInteraction(
             user_id=user_id,
             interaction_type=itype,
@@ -119,8 +144,6 @@ def record_ai_interaction(
         )
         db.add(rec)
         db.commit()
-    except Exception:
-        try:
+    except SQLAlchemyError:
+        with suppress(SQLAlchemyError):
             db.rollback()
-        except Exception:
-            pass

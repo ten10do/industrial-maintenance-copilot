@@ -47,16 +47,16 @@ describe('AppLayout', () => {
   it('主管不可见管理员专属入口', () => {
     renderWithRole('supervisor');
     expect(screen.getByText('故障上报')).toBeInTheDocument();
-    expect(screen.getByText('维修工单')).toBeInTheDocument();
+    expect(screen.getByText('智能工单中心')).toBeInTheDocument();
     expect(screen.queryByText('系统管理')).not.toBeInTheDocument();
   });
 
   it('维修工程师只显示授权菜单', () => {
     renderWithRole('technician');
-    expect(screen.getByText('仪表盘')).toBeInTheDocument();
+    expect(screen.getByText('智能运维驾驶舱')).toBeInTheDocument();
     expect(screen.getByText('故障上报')).toBeInTheDocument();
-    expect(screen.getByText('维修工单')).toBeInTheDocument();
-    expect(screen.getByText('设备台账')).toBeInTheDocument();
+    expect(screen.getByText('智能工单中心')).toBeInTheDocument();
+    expect(screen.getByText('设备资产中心')).toBeInTheDocument();
     expect(screen.queryByText('系统管理')).not.toBeInTheDocument();
   });
 
@@ -89,7 +89,7 @@ describe('AppLayout', () => {
     });
     render(<AppLayout><div data-testid="child">login content</div></AppLayout>);
     expect(screen.getByTestId('child')).toBeInTheDocument();
-    expect(screen.queryByText('仪表盘')).not.toBeInTheDocument();
+    expect(screen.queryByText('智能运维驾驶舱')).not.toBeInTheDocument();
   });
 
   it('退出登录调用 logout 并跳转登录页', async () => {

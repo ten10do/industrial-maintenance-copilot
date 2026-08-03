@@ -1,11 +1,12 @@
 """数据库引擎与会话工厂。"""
+
 from __future__ import annotations
 
 from collections.abc import Generator
 from typing import Any
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker, declarative_base
+from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import settings
 
@@ -16,9 +17,13 @@ if url.startswith("sqlite"):
 
 engine = create_engine(url, connect_args=connect_args, future=True, echo=False)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, class_=Session)
+SessionLocal = sessionmaker(
+    autocommit=False, autoflush=False, bind=engine, class_=Session
+)
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 
 def get_db() -> Generator[Session, None, None]:

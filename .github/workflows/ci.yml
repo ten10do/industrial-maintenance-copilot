@@ -2,11 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches:
-      - master
+    branches: [master]
   push:
-    branches:
-      - master
+    branches: [master]
 
 permissions:
   contents: read
@@ -16,8 +14,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend:
-    name: Backend
+  backend-quality:
+    name: Backend quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: apps/api/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - name: Ruff format
+        run: python -m scripts.quality --format-only
+      - name: Ruff lint
+        run: python -m scripts.quality --lint-only
+      - name: MyPy strict
+        run: python -m mypy
+
+  backend-tests:
+    name: Backend tests (PostgreSQL)
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -26,15 +45,23 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: maintenance_test
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/maintenance_test
+      REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret-not-for-production
       AI_ENABLED: "false"
       SEED_ON_STARTUP: "false"
@@ -42,34 +69,27 @@ jobs:
       run:
         working-directory: apps/api
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: apps/api/requirements.txt
-
-      - name: Install backend dependencies
-        run: python -m pip install -r requirements.txt
-
-      - name: Verify PostgreSQL schema initialization
+      - run: python -m pip install -r requirements.txt
+      - name: Verify PostgreSQL migration round trip
+        run: python -m scripts.verify_migrations
+      - name: Pytest with coverage
         run: >-
-          python -c "from app.db.migrations import upgrade_schema;
-          from app.db.session import Base, engine;
-          upgrade_schema(engine);
-          Base.metadata.create_all(bind=engine)"
+          python -m pytest --cov=app --cov-report=term-missing
+          --cov-report=xml:coverage.xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: apps/api/coverage.xml
+          retention-days: 7
 
-      - name: Run migration regression tests
-        run: python -m pytest tests/test_database_migrations.py
-
-      - name: Run backend tests
-        run: python -m pytest
-
-  frontend:
-    name: Frontend
+  frontend-quality:
+    name: Frontend quality
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -78,36 +98,87 @@ jobs:
       API_BASE_URL: http://127.0.0.1:8000
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - name: Jest with coverage
+        run: npm run test:coverage -- --runInBand
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: apps/web/coverage
+          retention-days: 7
 
-      - name: Install frontend dependencies
-        run: npm ci
+  frontend-build:
+    name: Frontend production build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    env:
+      API_BASE_URL: http://127.0.0.1:8000
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run build
 
-      - name: Run TypeScript typecheck
-        run: npm run typecheck
-
-      - name: Run ESLint
-        run: npm run lint
-
-      - name: Run Jest tests
-        run: npm test -- --runInBand
-
-      - name: Build production frontend
-        run: npm run build
+  docker-compose-smoke:
+    name: Docker Compose smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build services
+        run: docker compose build
+      - name: Start services
+        run: docker compose up -d
+      - name: Wait for complete service health
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:8000/ready >/dev/null \
+              && curl -fsS http://127.0.0.1:3000/login >/dev/null \
+              && docker compose exec -T worker python -m app.runtime worker --check \
+              && docker compose exec -T scheduler python -m app.runtime scheduler --check; then
+              docker compose ps
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose ps
+          docker compose logs
+          exit 1
+      - name: Verify liveness and intelligent maintenance loop
+        run: |
+          curl -fsS http://127.0.0.1:8000/health
+          curl -fsS http://127.0.0.1:8000/ready
+          python scripts/smoke_intelligent_loop.py
+      - name: Print compose diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps
+          docker compose logs
+      - name: Stop compose services
+        if: always()
+        run: docker compose down -v --remove-orphans
 
   e2e:
-    name: E2E
+    name: Playwright E2E
     needs:
-      - backend
-      - frontend
+      - backend-quality
+      - backend-tests
+      - frontend-quality
+      - frontend-build
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -116,15 +187,23 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: maintenance_e2e
-        ports:
-          - 5432:5432
+        ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@localhost:5432/maintenance_e2e
+      REDIS_URL: redis://localhost:6379/0
       SECRET_KEY: ci-test-secret-not-for-production
       AI_ENABLED: "false"
       SEED_ON_STARTUP: "true"
@@ -135,83 +214,56 @@ jobs:
       PW_REPORT_DIR: playwright-report
       NEXT_TELEMETRY_DISABLED: "1"
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: apps/api/requirements.txt
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
-
-      - name: Install backend dependencies
+      - run: python -m pip install -r requirements.txt
         working-directory: apps/api
-        run: python -m pip install -r requirements.txt
-
-      - name: Install frontend dependencies
+      - run: npm ci
         working-directory: apps/web
-        run: npm ci
-
-      - name: Install Chromium
+      - run: npx playwright install --with-deps chromium
         working-directory: apps/web
-        run: npx playwright install --with-deps chromium
-
-      - name: Start backend and wait for health
+      - name: Start backend and wait for readiness
         working-directory: apps/api
         run: |
           python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/api.log" 2>&1 &
-          for i in {1..30}; do
-            if response="$(curl -fsS http://127.0.0.1:8000/health 2>/dev/null)"; then
-              if [[ "$response" == *'"database":"ok"'* ]]; then
-                echo "$response"
-                exit 0
-              fi
-            fi
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:8000/ready >/dev/null; then exit 0; fi
             sleep 2
           done
           cat "$RUNNER_TEMP/api.log"
           exit 1
-
-      - name: Build production frontend
+      - run: npm run build
         working-directory: apps/web
-        run: npm run build
-
-      - name: Start frontend and wait for health
+      - name: Start frontend
         working-directory: apps/web
         run: |
-          npm run start -- --hostname 127.0.0.1 --port 3000 > "$RUNNER_TEMP/web.log" 2>&1 &
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:3000/login >/dev/null; then
-              exit 0
-            fi
+          mkdir -p .next/standalone/.next
+          cp -r .next/static .next/standalone/.next/static
+          HOSTNAME=127.0.0.1 PORT=3000 node .next/standalone/server.js > "$RUNNER_TEMP/web.log" 2>&1 &
+          for i in {1..40}; do
+            if curl -fsS http://127.0.0.1:3000/login >/dev/null; then exit 0; fi
             sleep 2
           done
           cat "$RUNNER_TEMP/web.log"
           exit 1
-
-      - name: Run Playwright tests
+      - run: npx playwright test
         working-directory: apps/web
-        run: npx playwright test
-
       - name: Print service logs on failure
         if: failure()
         run: |
-          echo "Backend log:"
-          if [[ -f "$RUNNER_TEMP/api.log" ]]; then cat "$RUNNER_TEMP/api.log"; else echo "Backend log not created"; fi
-          echo "Frontend log:"
-          if [[ -f "$RUNNER_TEMP/web.log" ]]; then cat "$RUNNER_TEMP/web.log"; else echo "Frontend log not created"; fi
-
-      - name: Upload Playwright failure artifacts
+          cat "$RUNNER_TEMP/api.log" || true
+          cat "$RUNNER_TEMP/web.log" || true
+      - uses: actions/upload-artifact@v4
         if: failure()
-        uses: actions/upload-artifact@v4
         with:
           name: playwright-failure-${{ github.run_id }}
           path: |

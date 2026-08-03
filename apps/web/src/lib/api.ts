@@ -200,3 +200,73 @@ export async function searchKnowledge(q: string, faultCode?: string, equipmentTy
 // Dashboard
 export async function getSupervisorDashboard() { return request<any>('/dashboard/supervisor'); }
 export async function getTechnicianDashboard() { return request<any>('/dashboard/technician'); }
+
+// Intelligent maintenance
+export async function getIntelligenceOverview() {
+  return request<any>('/intelligence/overview');
+}
+export async function getEquipmentIntelligence(id: number, limit = 60) {
+  return request<any>(`/intelligence/equipment/${id}?limit=${limit}`);
+}
+export async function listAnomalies(params?: Record<string, string>) {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  return request<any[]>(`/intelligence/anomalies${qs}`);
+}
+export async function listPredictions() {
+  return request<any[]>('/intelligence/predictions');
+}
+export async function listDiagnoses() {
+  return request<any[]>('/intelligence/diagnoses');
+}
+export async function listMaintenanceRecommendations() {
+  return request<any[]>('/intelligence/recommendations');
+}
+export async function getSimulatorStatus() {
+  return request<any>('/intelligence/simulator/status');
+}
+export async function configureSimulator(data: {
+  equipment_ids: number[];
+  interval_seconds: number;
+  scenario: string;
+  seed: number;
+  auto_create_work_orders: boolean;
+}) {
+  return request<any>('/intelligence/simulator/configure', {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}
+export async function startSimulator() {
+  return request<any>('/intelligence/simulator/start', { method: 'POST' });
+}
+export async function pauseSimulator() {
+  return request<any>('/intelligence/simulator/pause', { method: 'POST' });
+}
+export async function resetSimulator() {
+  return request<any>('/intelligence/simulator/reset', { method: 'POST' });
+}
+export async function tickSimulator() {
+  return request<any>('/intelligence/simulator/tick', { method: 'POST' });
+}
+export async function listOperationApprovals(status?: string) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  return request<any[]>(`/intelligence/approvals${qs}`);
+}
+export async function approveOperation(id: number, note?: string) {
+  return request<any>(`/intelligence/approvals/${id}/approve`, {
+    method: 'POST', body: JSON.stringify({ note }),
+  });
+}
+export async function rejectOperation(id: number, note?: string) {
+  return request<any>(`/intelligence/approvals/${id}/reject`, {
+    method: 'POST', body: JSON.stringify({ note }),
+  });
+}
+export async function verifyMaintenance(data: {
+  work_order_id: number;
+  notes?: string;
+  create_knowledge_case?: boolean;
+}) {
+  return request<any>('/intelligence/verifications', {
+    method: 'POST', body: JSON.stringify(data),
+  });
+}

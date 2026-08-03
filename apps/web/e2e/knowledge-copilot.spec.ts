@@ -33,7 +33,7 @@ test.describe('知识库浏览与查询', () => {
     await loginAs(page, 'technician');
 
     // Navigate to knowledge page via sidebar
-    await navigateTo(page, '知识库', '**/knowledge');
+    await navigateTo(page, '运维知识中心', '**/knowledge');
 
     // Wait for items to load
     await page.waitForLoadState('networkidle', { timeout: 10000 });
@@ -77,7 +77,7 @@ test.describe('知识库浏览与查询', () => {
   test('场景2: 按分类筛选知识库条目', async ({ page }) => {
     await loginAs(page, 'supervisor');
 
-    await navigateTo(page, '知识库', '**/knowledge');
+    await navigateTo(page, '运维知识中心', '**/knowledge');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Verify category filter dropdown exists
@@ -100,7 +100,7 @@ test.describe('知识库浏览与查询', () => {
   test('场景3: 搜索知识库', async ({ page }) => {
     await loginAs(page, 'technician');
 
-    await navigateTo(page, '知识库', '**/knowledge');
+    await navigateTo(page, '运维知识中心', '**/knowledge');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Find search input
@@ -126,7 +126,7 @@ test.describe('知识库浏览与查询', () => {
   test('场景4: 管理员创建知识条目并删除', async ({ page }) => {
     await loginAs(page, 'admin');
 
-    await navigateTo(page, '知识库', '**/knowledge');
+    await navigateTo(page, '运维知识中心', '**/knowledge');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Click "新建条目" button
@@ -189,7 +189,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
     await loginAs(page, 'technician');
 
     // Navigate to copilot page
-    await navigateTo(page, 'AI 助手', '**/copilot');
+    await navigateTo(page, '运维 Agent', '**/copilot');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Verify page title
@@ -261,7 +261,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
   test('场景6: Copilot 无可靠来源场景', async ({ page }) => {
     await loginAs(page, 'technician');
 
-    await navigateTo(page, 'AI 助手', '**/copilot');
+    await navigateTo(page, '运维 Agent', '**/copilot');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Type a very specific question unlikely to match
@@ -295,7 +295,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
   test('场景7: 清空对话重新提问', async ({ page }) => {
     await loginAs(page, 'technician');
 
-    await navigateTo(page, 'AI 助手', '**/copilot');
+    await navigateTo(page, '运维 Agent', '**/copilot');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // First question
@@ -337,7 +337,7 @@ test.describe('Copilot AI 问答与引用来源', () => {
   test('场景8: 快捷示例问题一键提问', async ({ page }) => {
     await loginAs(page, 'technician');
 
-    await navigateTo(page, 'AI 助手', '**/copilot');
+    await navigateTo(page, '运维 Agent', '**/copilot');
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Check example questions are visible

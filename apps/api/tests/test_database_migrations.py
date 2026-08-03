@@ -1,6 +1,22 @@
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.orm import Session
 
-from app.db.migrations import upgrade_schema
+from app.db.migrations import (
+    INTELLIGENT_MAINTENANCE_TABLES,
+    downgrade_intelligent_schema,
+    schema_is_ready,
+    upgrade_schema,
+)
+from app.models.base import (
+    EquipmentStatusEnum,
+    PriorityEnum,
+    RiskLevelEnum,
+    WorkOrderStatusEnum,
+    WorkOrderTypeEnum,
+)
+from app.models.equipment import Equipment, EquipmentType
+from app.models.intelligence import TelemetryRecord
+from app.models.workorder import WorkOrder
 
 
 def test_upgrade_adds_checklist_category_without_losing_data(tmp_path):
@@ -22,6 +38,7 @@ def test_upgrade_adds_checklist_category_without_losing_data(tmp_path):
     assert upgrade_schema(engine) == [
         "work_order_checklist_items.category",
         "work_order_checklist_items.category_backfill",
+        "intelligent_maintenance.head",
     ]
 
     columns = {
@@ -31,10 +48,7 @@ def test_upgrade_adds_checklist_category_without_losing_data(tmp_path):
     assert "category" in columns
     with engine.connect() as connection:
         rows = connection.execute(
-            text(
-                "SELECT content, category FROM work_order_checklist_items "
-                "ORDER BY id"
-            )
+            text("SELECT content, category FROM work_order_checklist_items ORDER BY id")
         ).all()
     assert rows == [
         ("legacy checklist item", "repair"),
@@ -53,5 +67,117 @@ def test_upgrade_is_idempotent(tmp_path):
             )
         )
 
+    assert upgrade_schema(engine) == ["intelligent_maintenance.head"]
     assert upgrade_schema(engine) == []
+
+
+def test_upgrade_adds_intelligent_equipment_fields_and_backfills_uuid(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'legacy-equipment.db'}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE equipment ("
+                "id INTEGER PRIMARY KEY, code VARCHAR(64) NOT NULL)"
+            )
+        )
+        connection.execute(
+            text("INSERT INTO equipment (id, code) VALUES (1, 'EQ-001')")
+        )
+
+    applied = upgrade_schema(engine)
+
+    assert applied == [
+        "equipment.asset_uuid",
+        "equipment.next_maintenance_at",
+        "equipment.health_score",
+        "equipment.rated_parameters",
+        "equipment.cumulative_runtime_hours",
+        "equipment.asset_uuid_backfill",
+        "intelligent_maintenance.head",
+    ]
+    columns = {column["name"] for column in inspect(engine).get_columns("equipment")}
+    assert {
+        "asset_uuid",
+        "next_maintenance_at",
+        "health_score",
+        "rated_parameters",
+        "cumulative_runtime_hours",
+    }.issubset(columns)
+    with engine.connect() as connection:
+        row = connection.execute(
+            text(
+                "SELECT asset_uuid, health_score, cumulative_runtime_hours "
+                "FROM equipment WHERE id = 1"
+            )
+        ).one()
+    assert len(row.asset_uuid) == 32
+    assert row.health_score == 100
+    assert row.cumulative_runtime_hours == 0
     assert upgrade_schema(engine) == []
+
+
+def test_intelligent_schema_upgrade_downgrade_upgrade_preserves_legacy_data(
+    tmp_path,
+):
+    engine = create_engine(f"sqlite:///{tmp_path / 'roundtrip.db'}")
+    assert upgrade_schema(engine) == ["intelligent_maintenance.head"]
+    assert schema_is_ready(engine) is True
+
+    with Session(engine) as db:
+        equipment_type = EquipmentType(name="工业电机")
+        db.add(equipment_type)
+        db.flush()
+        equipment = Equipment(
+            code="MOTOR-MIG-001",
+            name="迁移验证电机",
+            equipment_type_id=equipment_type.id,
+            status=EquipmentStatusEnum.running,
+            risk_level=RiskLevelEnum.low,
+            qr_token="migration-motor",
+        )
+        db.add(equipment)
+        db.flush()
+        work_order = WorkOrder(
+            code="WO-MIG-001",
+            title="迁移前兼容工单",
+            equipment_id=equipment.id,
+            order_type=WorkOrderTypeEnum.fault_repair,
+            priority=PriorityEnum.P3,
+            status=WorkOrderStatusEnum.pending_dispatch,
+        )
+        db.add(work_order)
+        db.commit()
+
+    dropped = downgrade_intelligent_schema(engine)
+    assert set(dropped) == set(INTELLIGENT_MAINTENANCE_TABLES)
+    assert schema_is_ready(engine) is False
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT title FROM work_orders WHERE code = 'WO-MIG-001'")
+            ).scalar_one()
+            == "迁移前兼容工单"
+        )
+
+    assert upgrade_schema(engine) == ["intelligent_maintenance.head"]
+    assert schema_is_ready(engine) is True
+    with engine.connect() as connection:
+        assert (
+            connection.execute(
+                text("SELECT name FROM equipment WHERE code = 'MOTOR-MIG-001'")
+            ).scalar_one()
+            == "迁移验证电机"
+        )
+
+
+def test_intelligent_schema_has_foreign_keys_indexes_and_utc_columns(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'constraints.db'}")
+    upgrade_schema(engine)
+    inspector = inspect(engine)
+
+    telemetry_fks = inspector.get_foreign_keys("telemetry_records")
+    assert any(fk["referred_table"] == "equipment" for fk in telemetry_fks)
+    telemetry_indexes = inspector.get_indexes("telemetry_records")
+    assert any("equipment_id" in index["column_names"] for index in telemetry_indexes)
+    assert any("collected_at" in index["column_names"] for index in telemetry_indexes)
+    assert TelemetryRecord.__table__.c.collected_at.type.timezone is True

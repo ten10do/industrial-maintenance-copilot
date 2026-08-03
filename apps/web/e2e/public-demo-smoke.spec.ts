@@ -26,7 +26,7 @@ test.describe('公开演示环境 Smoke Test', () => {
     await expect(page).toHaveURL(/\/(login|dashboard)$/);
 
     await loginAs(page, 'supervisor');
-    await expect(page.getByRole('heading', { name: '运维管理仪表盘' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '智能运维驾驶舱' })).toBeVisible();
     await capture(page, 'dashboard.png');
 
     await page.getByRole('button', { name: '故障上报' }).click();
@@ -34,13 +34,13 @@ test.describe('公开演示环境 Smoke Test', () => {
     await expect(page.locator('.card')).not.toContainText('加载中...');
     await capture(page, 'fault-report.png');
 
-    await page.getByRole('button', { name: '维修工单' }).click();
-    await expect(page.getByRole('heading', { name: '工单管理' })).toBeVisible();
+    await page.getByRole('button', { name: '智能工单中心' }).click();
+    await expect(page.getByRole('heading', { name: '智能工单中心' })).toBeVisible();
     await expect(page.getByText('加载中...')).toBeHidden({ timeout: 30_000 });
     const firstWorkOrder = page.locator('tbody tr').first();
     await expect(firstWorkOrder).toBeVisible({ timeout: 30_000 });
 
-    await page.getByRole('button', { name: '知识库' }).click();
+    await page.getByRole('button', { name: '运维知识中心' }).click();
     await expect(page.getByRole('heading', { name: '知识库' })).toBeVisible();
     const search = page.getByPlaceholder('搜索标题或内容...');
     await search.fill('E101');
@@ -48,7 +48,7 @@ test.describe('公开演示环境 Smoke Test', () => {
     await expect(page.locator('.card').filter({ hasText: 'E101' }).first()).toBeVisible();
     await capture(page, 'knowledge-base.png');
 
-    await page.getByRole('button', { name: 'AI 助手' }).click();
+    await page.getByRole('button', { name: '运维 Agent' }).click();
     await page.getByTestId('copilot-question-input').fill('E101 故障如何排查？');
     await page.getByTestId('copilot-submit-button').click();
     await expect(page.getByText('Mock AI 模式')).toBeVisible();
@@ -56,7 +56,7 @@ test.describe('公开演示环境 Smoke Test', () => {
     await capture(page, 'copilot.png');
 
     await loginAs(page, 'technician');
-    await page.getByRole('button', { name: '维修工单' }).click();
+    await page.getByRole('button', { name: '智能工单中心' }).click();
     await expect(page.getByText('加载中...')).toBeHidden({ timeout: 30_000 });
     const technicianWorkOrder = page.locator('tbody tr').first();
     await expect(technicianWorkOrder).toBeVisible({ timeout: 30_000 });
