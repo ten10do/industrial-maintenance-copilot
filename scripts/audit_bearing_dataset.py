@@ -5,10 +5,13 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
+import math
 import re
 import sys
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -61,7 +64,7 @@ def audit_paderborn(
     labels, label_errors = _read_labels(labels_path)
     errors.extend(label_errors)
     mat_files = sorted(raw_dir.rglob("*.mat")) if raw_dir.exists() else []
-    partial_files = sorted(raw_dir.rglob("*.partial")) if raw_dir.exists() else []
+    partial_files = _partial_files(raw_dir)
     corrupted: list[str] = []
     bearing_files: dict[str, list[Path]] = {}
     operating_conditions: set[str] = set()
@@ -184,7 +187,7 @@ def audit_xjtu(
 ) -> dict[str, Any]:
     errors: list[str] = []
     csv_files = sorted(raw_dir.rglob("*.csv")) if raw_dir.exists() else []
-    partial_files = sorted(raw_dir.rglob("*.partial")) if raw_dir.exists() else []
+    partial_files = _partial_files(raw_dir)
     bearing_dirs = {
         path.parent.name: path.parent
         for path in csv_files
@@ -201,6 +204,7 @@ def audit_xjtu(
     run_lengths: dict[str, dict[str, float | int | str | None]] = {}
     observed_sample_counts: Counter[int] = Counter()
     observed_channel_counts: Counter[int] = Counter()
+    content_hashes: dict[str, list[str]] = {}
     for bearing_id, directory in sorted(bearing_dirs.items()):
         expected_condition = _expected_xjtu_condition(bearing_id)
         if (
@@ -221,9 +225,10 @@ def audit_xjtu(
                 sequence_errors.append(f"{bearing_id}: acquisition sequence has gaps")
         for path in files:
             try:
-                samples, channels = _audit_csv(path)
+                samples, channels, content_hash = _audit_csv(path)
                 observed_sample_counts[samples] += 1
                 observed_channel_counts[channels] += 1
+                content_hashes.setdefault(content_hash, []).append(path.as_posix())
                 if samples != expected_samples or channels != 2:
                     malformed.append(
                         f"{path.as_posix()}: samples={samples}, channels={channels}"
@@ -236,6 +241,7 @@ def audit_xjtu(
             "failure_endpoint": files[-1].name if files else None,
             "operating_condition": directory.parent.name,
         }
+    duplicate_files = [paths for paths in content_hashes.values() if len(paths) > 1]
     manifest = _load_manifest(manifest_path, errors)
     archive_status = _audit_xjtu_archive(raw_dir, manifest)
     errors.extend(archive_status.pop("errors"))
@@ -248,6 +254,8 @@ def audit_xjtu(
         errors.append(f"sequence ordering failures: {len(sequence_errors)}")
     if malformed:
         errors.append(f"malformed CSV acquisitions: {len(malformed)}")
+    if duplicate_files:
+        errors.append(f"duplicate CSV contents: {len(duplicate_files)} groups")
     if condition_mapping_errors:
         errors.append(
             f"operating condition mapping failures: {condition_mapping_errors}"
@@ -274,6 +282,7 @@ def audit_xjtu(
         "failure_endpoint_definition": "last observable acquisition in each complete run",
         "missing_bearings": missing,
         "malformed_csv": malformed,
+        "duplicate_files": duplicate_files,
         "sequence_ordering": sequence_errors,
         "condition_mapping_errors": condition_mapping_errors,
         "partial_files": [path.as_posix() for path in partial_files],
@@ -281,6 +290,46 @@ def audit_xjtu(
         "archive_validation": archive_status,
         "errors": errors,
     }
+
+
+def record_paderborn_extraction(
+    manifest_path: Path,
+    audit_result: dict[str, Any],
+    *,
+    extractor: str,
+) -> None:
+    if audit_result.get("status") != "PASS":
+        raise ValueError("refusing to record extraction before a passing audit")
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise TypeError("manifest root must be an object")
+    counts = audit_result.get("mat_files_per_bearing")
+    archives = payload.get("archives")
+    if not isinstance(counts, dict) or not isinstance(archives, list):
+        raise TypeError("audit or manifest has no per-bearing extraction records")
+    for record in archives:
+        if not isinstance(record, dict):
+            raise TypeError("archive manifest record must be an object")
+        bearing_id = str(record.get("bearing_id", ""))
+        count = counts.get(bearing_id)
+        if not isinstance(count, int):
+            raise TypeError(f"missing audited MAT count for {bearing_id}")
+        record["extracted_mat_files"] = count
+    if len(archives) != len(counts):
+        raise ValueError("archive and audited bearing counts differ")
+    now = datetime.now(UTC).isoformat()
+    payload["extraction"] = {
+        "status": "verified",
+        "extractor": extractor,
+        "mat_files": audit_result["dataset_files"],
+        "bearing_count": audit_result["bearing_count"],
+        "audit_status": "PASS",
+        "verified_at": now,
+    }
+    payload["updated_at"] = now
+    temporary = manifest_path.with_suffix(f"{manifest_path.suffix}.tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(manifest_path)
 
 
 def _read_labels(path: Path) -> tuple[dict[str, dict[str, str]], list[str]]:
@@ -354,6 +403,41 @@ def _audit_paderborn_archives(
 
 def _audit_xjtu_archive(raw_dir: Path, manifest: dict[str, Any]) -> dict[str, Any]:
     errors: list[str] = []
+    archive_parts = manifest.get("archive_parts")
+    if isinstance(archive_parts, list):
+        mismatches: list[str] = []
+        total_size = 0
+        found_count = 0
+        for item in archive_parts:
+            if not isinstance(item, dict):
+                mismatches.append("invalid archive part record")
+                continue
+            relative_path = str(item.get("path", ""))
+            archive = raw_dir / relative_path
+            if not archive.is_file():
+                mismatches.append(f"{relative_path}: not found")
+                continue
+            found_count += 1
+            total_size += archive.stat().st_size
+            if archive.stat().st_size != item.get("size_bytes"):
+                mismatches.append(f"{relative_path}: size mismatch")
+            if not item.get("sha256") or sha256(archive) != item.get("sha256"):
+                mismatches.append(f"{relative_path}: SHA256 mismatch or absent")
+        if total_size != manifest.get("archive_size_bytes"):
+            mismatches.append("multipart archive total size mismatch or absent")
+        if mismatches:
+            errors.append(f"archive validation failures: {mismatches}")
+        if not manifest.get("download_verified", False):
+            errors.append("download manifest is not verified")
+        return {
+            "archive_format": manifest.get("archive_format", "multipart"),
+            "archive_count": found_count,
+            "archive_size_bytes": total_size,
+            "checksum_status": "PASS" if not errors else "FAIL",
+            "checksum_mismatches": mismatches,
+            "errors": errors,
+        }
+
     archive_name = str(manifest.get("archive_name", "XJTU-SY_Bearing_Datasets.zip"))
     archive = raw_dir / "_archives" / archive_name
     mismatches: list[str] = []
@@ -382,11 +466,13 @@ def _audit_xjtu_archive(raw_dir: Path, manifest: dict[str, Any]) -> dict[str, An
     }
 
 
-def _audit_csv(path: Path) -> tuple[int, int]:
+def _audit_csv(path: Path) -> tuple[int, int, str]:
     samples = 0
     channels: int | None = None
     skipped_header = False
-    with path.open(encoding="utf-8-sig", newline="") as stream:
+    contents = path.read_bytes()
+    content_hash = hashlib.sha256(contents).hexdigest()
+    with io.StringIO(contents.decode("utf-8-sig"), newline="") as stream:
         for row in csv.reader(stream):
             if not row or all(not value.strip() for value in row):
                 continue
@@ -399,6 +485,8 @@ def _audit_csv(path: Path) -> tuple[int, int]:
                 raise ValueError(
                     f"non-numeric row after data begins: {row[:3]}"
                 ) from None
+            if not all(math.isfinite(value) for value in values):
+                raise ValueError("non-finite numeric value")
             if channels is None:
                 channels = len(values)
             elif len(values) != channels:
@@ -406,7 +494,18 @@ def _audit_csv(path: Path) -> tuple[int, int]:
             samples += 1
     if channels is None:
         raise ValueError("empty CSV acquisition")
-    return samples, channels
+    return samples, channels, content_hash
+
+
+def _partial_files(raw_dir: Path) -> list[Path]:
+    if not raw_dir.exists():
+        return []
+    return sorted(
+        path
+        for path in raw_dir.rglob("*")
+        if path.is_file()
+        and (".partial" in path.name.lower() or path.name.lower().endswith(".part"))
+    )
 
 
 def _load_manifest(path: Path, errors: list[str]) -> dict[str, Any]:
@@ -458,6 +557,8 @@ def main() -> None:
     parser.add_argument("--labels", type=Path)
     parser.add_argument("--manifest", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--record-extraction", action="store_true")
+    parser.add_argument("--extractor", default="7-Zip")
     args = parser.parse_args()
     if args.dataset == "paderborn":
         if args.labels is None:
@@ -468,9 +569,17 @@ def main() -> None:
             args.manifest or Path("data/manifests/paderborn-real-download.json"),
         )
     else:
+        if args.record_extraction:
+            parser.error("--record-extraction is only valid for Paderborn")
         result = audit_xjtu(
             args.raw_dir,
             args.manifest or Path("data/manifests/xjtu-sy-real-download.json"),
+        )
+    if args.record_extraction:
+        record_paderborn_extraction(
+            args.manifest or Path("data/manifests/paderborn-real-download.json"),
+            result,
+            extractor=args.extractor,
         )
     rendered = json.dumps(result, indent=2, ensure_ascii=False) + "\n"
     if args.output:

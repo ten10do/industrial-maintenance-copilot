@@ -145,7 +145,7 @@ def _download_once(client: httpx.Client, url: str, partial: Path) -> bool:
         resumed = offset > 0 and response.status_code == 206
         mode = "ab" if resumed else "wb"
         with partial.open(mode) as stream:
-            for chunk in response.iter_bytes(1024 * 1024):
+            for chunk in response.iter_raw(64 * 1024):
                 stream.write(chunk)
     if not partial.exists() or partial.stat().st_size == 0:
         raise RuntimeError(f"empty response while downloading {url}")
@@ -277,6 +277,11 @@ def main() -> None:
                 record["archive"] = name
                 record["extracted_mat_files"] = 0
                 archive_records[bearing_id] = record
+                write_manifest(
+                    args.manifest,
+                    list(archive_records.values()),
+                    list(metadata_records.values()),
+                )
         write_manifest(
             args.manifest,
             list(archive_records.values()),

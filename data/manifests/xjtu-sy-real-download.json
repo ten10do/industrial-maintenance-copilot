@@ -1,34 +1,98 @@
 {
   "dataset": "xjtu-sy",
   "source": "https://biaowang.tech/xjtu-sy-bearing-datasets/",
-  "download_method": "manual_author_mirror_required",
-  "archive_name": "XJTU-SY_Bearing_Datasets.zip",
-  "archive_size_bytes": null,
-  "sha256": null,
-  "download_verified": false,
-  "extracted_files": 0,
+  "download_method": "gdown_public_google_drive_folder",
+  "google_drive_folder_id": "1_ycmG46PARiykt82ShfnFfyQsaXv3_VK",
+  "archive_format": "multipart_rar",
+  "archive_size_bytes": 4444600440,
+  "download_verified": true,
+  "archive_parts": [
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part01.rar",
+      "path": "_archives/google-drive/Data/XJTU-SY_Bearing_Datasets.part01.rar",
+      "file_id": "1ATvZuD6j3bPxhyR07Zm-PURmOC4b4uRn",
+      "size_bytes": 744488960,
+      "sha256": "c500657353f089a4ab50212ff4ddfc7b982729e92e2b127440c8ad881d80b968"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part02.rar",
+      "path": "_archives/google-drive/Data/XJTU-SY_Bearing_Datasets.part02.rar",
+      "file_id": "162KvWNIpBGtd7EDWo4yP1j5XsaoNHOYU",
+      "size_bytes": 744488960,
+      "sha256": "4dfa6286a8e9c7cec1e925b347642349f36e27ab3f703c90d1d08977b7b4f61f"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part03.rar",
+      "path": "_archives/google-drive/Data/XJTU-SY_Bearing_Datasets.part03.rar",
+      "file_id": "1NvzrGW-KOSy48OZmiFxlE3TPV4CKAcw0",
+      "size_bytes": 744488960,
+      "sha256": "6929f531284f79e0209246b4ee23b23dd8d4faac1c0c3ff8fb131cda4a18bd3a"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part04.rar",
+      "path": "_archives/google-drive/Data/XJTU-SY_Bearing_Datasets.part04.rar",
+      "file_id": "1VuQ5-mK11p1S2pTxUZaH_IxOwUlsmN0S",
+      "size_bytes": 744488960,
+      "sha256": "2245825acd29bed3b95e7a77879a3fbadf20f4ad4f99486384c714174621597d"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part05.rar",
+      "path": "_archives/google-drive/Data/XJTU-SY_Bearing_Datasets.part05.rar",
+      "file_id": "1WH4OU4MLaMGQkbh6DghxPA5Dwvsq8tEf",
+      "size_bytes": 744488960,
+      "sha256": "e1b0a41a32b865e48ea7981c56f952a960d94335f3496b72eb4a65932f1671bd"
+    },
+    {
+      "name": "XJTU-SY_Bearing_Datasets.part06.rar",
+      "path": "_archives/google-drive/Data/XJTU-SY_Bearing_Datasets.part06.rar",
+      "file_id": "1wzQzQUx6-J8DuGczT81OkrkTgOUwL-I_",
+      "size_bytes": 722155640,
+      "sha256": "df1854821a9d481104476379f7bc045ea1e101427c6e36145cd7677dc7c4a684"
+    }
+  ],
+  "archive_integrity": {
+    "tool": "7-Zip 26.02 x64",
+    "status": "PASS_WITH_WARNING",
+    "volumes": 6,
+    "files": 9217,
+    "folders": 19,
+    "uncompressed_bytes": 12220812451,
+    "crc_or_data_errors": 0,
+    "warning": "7-Zip reported data after the end of the archive; all six volumes and all archive entries tested successfully"
+  },
   "automatic_download_attempts": [
     {
       "mirror": "Google Drive",
-      "result": "public shared folder HTML; no direct archive response"
+      "result": "PASS: public author folder resolved to six RAR volumes; gdown downloaded every volume with resume where required"
     },
     {
       "mirror": "Dropbox",
-      "result": "public shared folder HTML; standard dl=1 returned HTML"
+      "result": "public dl=1 returned HTML and the author ReadMe requires saving the folder to a signed-in Dropbox account"
     },
     {
       "mirror": "MediaFire",
-      "result": "public shared folder HTML requiring interactive file selection"
+      "result": "public folder returned a client-rendered file list without normally presented direct file URLs"
     },
     {
       "mirror": "MEGA",
-      "result": "non-interactive request timed out; browser client required"
+      "result": "MEGAcmd was not installed; no Windows executable was installed automatically"
+    },
+    {
+      "mirror": "Baidu Netdisk",
+      "result": "public page required same-account app login/confirmation; no bypass attempted"
     }
   ],
   "extraction": {
-    "status": "not_downloaded",
-    "csv_files": 0,
-    "bearing_runs": 0
+    "status": "verified",
+    "extractor": "7-Zip 26.02 x64",
+    "root": "XJTU-SY_Bearing_Datasets",
+    "csv_files": 9216,
+    "bearing_runs": 15,
+    "operating_conditions": 3,
+    "samples_per_file": 32768,
+    "channels": 2,
+    "audit_status": "PASS",
+    "verified_at": "2026-08-03T07:54:00.7174475Z"
   },
-  "updated_at": "2026-08-03T00:00:00Z"
+  "updated_at": "2026-08-03T07:54:00.7174475Z"
 }

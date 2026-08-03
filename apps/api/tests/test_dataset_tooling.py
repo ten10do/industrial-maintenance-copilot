@@ -16,7 +16,11 @@ from scipy.io import savemat
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
-from audit_bearing_dataset import audit_paderborn, audit_xjtu  # noqa: E402
+from audit_bearing_dataset import (  # noqa: E402
+    audit_paderborn,
+    audit_xjtu,
+    record_paderborn_extraction,
+)
 from download_paderborn_dataset import (  # noqa: E402
     EXPECTED_BEARINGS,
     download_file,
@@ -48,7 +52,11 @@ def test_paderborn_download_resumes_to_an_atomic_destination(tmp_path: Path) -> 
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.headers["Range"] == "bytes=6-"
-        return httpx.Response(206, content=b"second", request=request)
+        return httpx.Response(
+            206,
+            stream=httpx.ByteStream(b"second"),
+            request=request,
+        )
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         record = download_file(
@@ -154,6 +162,11 @@ def test_paderborn_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> N
     assert result["status"] == "PASS"
     assert result["bearing_count"] == 1
     assert result["archive_validation"]["checksum_status"] == "PASS"
+    record_paderborn_extraction(manifest, result, extractor="7-Zip test")
+    recorded = json.loads(manifest.read_text(encoding="utf-8"))
+    assert recorded["archives"][0]["extracted_mat_files"] == 1
+    assert recorded["extraction"]["mat_files"] == 1
+    assert recorded["extraction"]["status"] == "verified"
 
 
 def test_xjtu_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> None:
@@ -165,7 +178,7 @@ def test_xjtu_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> None:
     bearing_dir.mkdir(parents=True)
     for index in (1, 2):
         (bearing_dir / f"{index}.csv").write_text(
-            "Horizontal,Vertical\n1.0,2.0\n3.0,4.0\n5.0,6.0\n7.0,8.0\n",
+            f"Horizontal,Vertical\n{index}.0,2.0\n3.0,4.0\n5.0,6.0\n7.0,8.0\n",
             encoding="utf-8",
         )
     manifest = tmp_path / "manifest.json"
@@ -192,3 +205,41 @@ def test_xjtu_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> None:
     assert result["measurement_files"] == 2
     assert result["run_lengths"]["Bearing1_1"]["failure_endpoint"] == "2.csv"
     assert result["archive_validation"]["checksum_status"] == "PASS"
+
+
+def test_xjtu_audit_rejects_non_finite_measurements(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    archive = raw_dir / "_archives" / "part01.rar"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"official-archive-fixture")
+    bearing_dir = raw_dir / "35Hz12kN" / "Bearing1_1"
+    bearing_dir.mkdir(parents=True)
+    (bearing_dir / "1.csv").write_text("1.0,nan\n", encoding="utf-8")
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "download_verified": True,
+                "archive_format": "multipart_rar",
+                "archive_size_bytes": archive.stat().st_size,
+                "archive_parts": [
+                    {
+                        "path": "_archives/part01.rar",
+                        "size_bytes": archive.stat().st_size,
+                        "sha256": _sha256(archive),
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = audit_xjtu(
+        raw_dir,
+        manifest,
+        expected_bearings=("Bearing1_1",),
+        expected_samples=1,
+    )
+
+    assert result["status"] == "FAIL"
+    assert "non-finite numeric value" in result["malformed_csv"][0]
