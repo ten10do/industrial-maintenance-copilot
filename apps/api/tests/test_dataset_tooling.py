@@ -16,6 +16,7 @@ from scipy.io import savemat
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
+import prepare_bearing_dataset as dataset_preparation  # noqa: E402
 from audit_bearing_dataset import (  # noqa: E402
     audit_paderborn,
     audit_xjtu,
@@ -93,6 +94,28 @@ def test_paderborn_download_rejects_an_existing_checksum_mismatch(
             retries=1,
             existing_record={"size_bytes": 3, "sha256": "not-the-current-hash"},
         )
+
+
+def test_paderborn_channel_falls_back_to_strict_mat5_reader(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "fixture.mat"
+    channels = np.empty((1, 1), dtype=[("Name", "O"), ("Data", "O"), ("Unit", "O")])
+    channels["Name"][0, 0] = "vibration_1"
+    channels["Data"][0, 0] = np.asarray([1.0, -2.0, 3.5])
+    channels["Unit"][0, 0] = "m/s2"
+    root = np.empty((1, 1), dtype=[("Y", "O")])
+    root["Y"][0, 0] = channels
+    savemat(path, {path.stem: root}, do_compression=False)
+
+    def fail_general_decode(*args: object, **kwargs: object) -> None:
+        raise TypeError("fixture general-reader failure")
+
+    monkeypatch.setattr(dataset_preparation, "loadmat", fail_general_decode)
+
+    signal = dataset_preparation._load_paderborn_channel(path, "vibration_1")
+
+    np.testing.assert_array_equal(signal, np.asarray([1.0, -2.0, 3.5]))
 
 
 def test_paderborn_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> None:

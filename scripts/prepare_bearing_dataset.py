@@ -6,14 +6,17 @@ import argparse
 import csv
 import gc
 import hashlib
+import io
 import json
+import struct
 import sys
+import zlib
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, BinaryIO
 
 import numpy as np
 from scipy.io import loadmat
@@ -21,8 +24,8 @@ from scipy.io import loadmat
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
-from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features  # noqa: E402
-from app.ml.types import FeatureVector, TelemetryWindow  # noqa: E402
+from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features
+from app.ml.types import FeatureVector, TelemetryWindow
 
 _STRING_DTYPES = {
     "target": "<U64",
@@ -115,6 +118,11 @@ def main() -> None:
             "feature_channel": "vibration_1"
             if args.dataset == "paderborn"
             else "horizontal_vibration",
+            "matlab_reader": (
+                "scipy.io.loadmat with strict MAT-v5 named-channel fallback"
+                if args.dataset == "paderborn"
+                else None
+            ),
         },
     )
 
@@ -433,7 +441,22 @@ def _read_labels(path: Path) -> dict[str, str]:
 
 
 def _load_paderborn_channel(path: Path, signal_key: str) -> np.ndarray[Any, Any]:
-    payload = loadmat(path, squeeze_me=True, struct_as_record=False)
+    try:
+        payload = loadmat(path, squeeze_me=True, struct_as_record=False)
+    except (OSError, TypeError, ValueError) as scipy_error:
+        try:
+            signal = _load_mat5_named_y_channel(path, signal_key)
+        except (OSError, TypeError, ValueError, zlib.error) as fallback_error:
+            raise ValueError(
+                f"cannot decode official MATLAB channel {signal_key!r} from "
+                f"{path.name}; scipy={scipy_error}; fallback={fallback_error}"
+            ) from fallback_error
+        print(
+            f"compatibility fallback decoded {signal_key!r} from {path.name} "
+            f"after scipy.io.loadmat failed: {scipy_error}",
+            file=sys.stderr,
+        )
+        return _validate_signal(signal, path, signal_key)
     root = payload.get(path.stem)
     if root is None or not hasattr(root, "Y"):
         raise ValueError(f"MATLAB payload has no official Y channel collection: {path}")
@@ -449,7 +472,194 @@ def _load_paderborn_channel(path: Path, signal_key: str) -> np.ndarray[Any, Any]
         raise ValueError(
             f"expected one official channel {signal_key!r} in {path.name}, found {len(matches)}"
         )
-    return matches[0]
+    return _validate_signal(matches[0], path, signal_key)
+
+
+@dataclass(frozen=True, slots=True)
+class _Mat5Matrix:
+    stream: BinaryIO
+    next_position: int
+    matrix_class: int
+    dimensions: tuple[int, ...]
+    name: str
+
+
+def _load_mat5_named_y_channel(path: Path, signal_key: str) -> np.ndarray[Any, Any]:
+    """Read only Y.Name/Data from a MATLAB v5 struct after a general decode fails."""
+    with path.open("rb") as stream:
+        stream.seek(124)
+        marker = stream.read(4)
+        if len(marker) != 4 or marker[2:4] not in {b"IM", b"MI"}:
+            raise ValueError("not a MATLAB v5 file")
+        endian = "<" if marker[2:4] == b"IM" else ">"
+        stream.seek(128)
+        root = _open_mat5_matrix(stream, endian)
+        if root.matrix_class != 2 or root.name != path.stem:
+            raise ValueError("top-level MATLAB value is not the expected struct")
+        root_fields = _read_mat5_struct_fields(root.stream, endian)
+        y_matrix: _Mat5Matrix | None = None
+        for field in root_fields:
+            child = _open_mat5_matrix(root.stream, endian)
+            if field == "Y":
+                y_matrix = child
+                break
+            root.stream.seek(child.next_position)
+        if y_matrix is None or y_matrix.matrix_class != 2:
+            raise ValueError("MATLAB payload has no Y struct")
+
+        fields = _read_mat5_struct_fields(y_matrix.stream, endian)
+        entry_count = int(np.prod(y_matrix.dimensions))
+        match: np.ndarray[Any, Any] | None = None
+        for entry_index in range(entry_count):
+            channel_name = ""
+            for field in fields:
+                child = _open_mat5_matrix(y_matrix.stream, endian)
+                if field == "Name":
+                    channel_name = _read_mat5_char(child, endian)
+                elif field == "Data" and _channel_matches(channel_name, signal_key):
+                    if match is not None:
+                        raise ValueError(f"duplicate channel {signal_key!r}")
+                    match = _read_mat5_numeric(child, endian)
+                    # The affected official file ends with zero-filled optional
+                    # metadata after the final channel's complete numeric data.
+                    if entry_index == entry_count - 1:
+                        return match
+                y_matrix.stream.seek(child.next_position)
+        if match is None:
+            raise ValueError(f"channel {signal_key!r} was not found")
+        return match
+
+
+def _open_mat5_matrix(stream: BinaryIO, endian: str) -> _Mat5Matrix:
+    start = stream.tell()
+    tag = stream.read(8)
+    if len(tag) != 8:
+        raise ValueError("truncated MATLAB matrix tag")
+    data_type, size = struct.unpack(f"{endian}II", tag)
+    next_position = start + 8 + size
+    if data_type == 15:
+        compressed = stream.read(size)
+        if len(compressed) != size:
+            raise ValueError("truncated compressed MATLAB matrix")
+        payload = io.BytesIO(zlib.decompress(compressed))
+        inner = payload.read(8)
+        if len(inner) != 8:
+            raise ValueError("truncated inner MATLAB matrix tag")
+        data_type, _ = struct.unpack(f"{endian}II", inner)
+        matrix_stream: BinaryIO = payload
+    else:
+        matrix_stream = stream
+    if data_type != 14:
+        raise TypeError(f"expected MATLAB matrix type 14, found {data_type}")
+
+    flags_type, flags = _read_mat5_element(matrix_stream, endian)
+    dims_type, dims = _read_mat5_element(matrix_stream, endian)
+    name_type, name = _read_mat5_element(matrix_stream, endian)
+    if flags_type != 6 or len(flags) < 4 or dims_type != 5 or name_type != 1:
+        raise ValueError("invalid MATLAB matrix header")
+    matrix_class = struct.unpack(f"{endian}I", flags[:4])[0] & 0xFF
+    if len(dims) % 4:
+        raise ValueError("invalid MATLAB dimensions")
+    dimensions = struct.unpack(f"{endian}{len(dims) // 4}i", dims)
+    return _Mat5Matrix(
+        stream=matrix_stream,
+        next_position=next_position,
+        matrix_class=matrix_class,
+        dimensions=tuple(int(value) for value in dimensions),
+        name=name.rstrip(b"\0").decode("latin1"),
+    )
+
+
+def _read_mat5_element(stream: BinaryIO, endian: str) -> tuple[int, bytes]:
+    tag = stream.read(8)
+    if len(tag) != 8:
+        raise ValueError("truncated MATLAB data element")
+    packed_type = struct.unpack(f"{endian}I", tag[:4])[0]
+    small_size = packed_type >> 16
+    if small_size:
+        if small_size > 4:
+            raise ValueError("invalid small MATLAB data element")
+        return packed_type & 0xFFFF, tag[4 : 4 + small_size]
+    size = struct.unpack(f"{endian}I", tag[4:])[0]
+    data = stream.read(size)
+    if len(data) != size:
+        raise ValueError("truncated MATLAB data element payload")
+    padding = (-size) % 8
+    if padding:
+        stream.seek(padding, 1)
+    return packed_type, data
+
+
+def _read_mat5_struct_fields(stream: BinaryIO, endian: str) -> list[str]:
+    length_type, length_data = _read_mat5_element(stream, endian)
+    names_type, names_data = _read_mat5_element(stream, endian)
+    if length_type != 5 or len(length_data) != 4 or names_type != 1:
+        raise ValueError("invalid MATLAB struct field table")
+    width = struct.unpack(f"{endian}i", length_data)[0]
+    if width <= 0 or len(names_data) % width:
+        raise ValueError("invalid MATLAB struct field width")
+    return [
+        names_data[index : index + width].split(b"\0", 1)[0].decode("latin1")
+        for index in range(0, len(names_data), width)
+    ]
+
+
+def _read_mat5_char(matrix: _Mat5Matrix, endian: str) -> str:
+    data_type, data = _read_mat5_element(matrix.stream, endian)
+    if data_type in {4, 17}:
+        if len(data) % 2:
+            raise ValueError("invalid UTF-16 MATLAB character data")
+        values = np.frombuffer(data, dtype=f"{endian}u2")
+        return "".join(chr(int(value)) for value in values if value)
+    if data_type in {1, 2, 16}:
+        return data.rstrip(b"\0").decode("utf-8")
+    raise TypeError(f"unsupported MATLAB character type {data_type}")
+
+
+def _read_mat5_numeric(matrix: _Mat5Matrix, endian: str) -> np.ndarray[Any, Any]:
+    data_type, data = _read_mat5_element(matrix.stream, endian)
+    dtypes = {
+        1: "i1",
+        2: "u1",
+        3: "i2",
+        4: "u2",
+        5: "i4",
+        6: "u4",
+        7: "f4",
+        9: "f8",
+        12: "i8",
+        13: "u8",
+    }
+    try:
+        dtype = np.dtype(f"{endian}{dtypes[data_type]}")
+    except KeyError:
+        raise TypeError(f"unsupported MATLAB numeric type {data_type}") from None
+    expected = int(np.prod(matrix.dimensions))
+    values = np.frombuffer(data, dtype=dtype)
+    if len(values) != expected:
+        raise ValueError(
+            f"MATLAB numeric length mismatch: expected {expected}, found {len(values)}"
+        )
+    return values.astype(np.float64, copy=True)
+
+
+def _channel_matches(channel_name: str, signal_key: str) -> bool:
+    name = channel_name.lower()
+    requested = signal_key.lower()
+    return name == requested or (
+        requested == "vibration" and name.startswith("vibration_")
+    )
+
+
+def _validate_signal(
+    signal: np.ndarray[Any, Any], path: Path, signal_key: str
+) -> np.ndarray[Any, Any]:
+    result = np.asarray(signal, dtype=np.float64).reshape(-1)
+    if not len(result) or not np.isfinite(result).all():
+        raise ValueError(
+            f"channel {signal_key!r} in {path.name} is empty or non-finite"
+        )
+    return result
 
 
 def _load_split_map(path: Path) -> dict[str, str]:
