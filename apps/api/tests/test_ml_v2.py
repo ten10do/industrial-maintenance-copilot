@@ -27,6 +27,7 @@ from app.ml.v2_governance import (
     rul_promotion,
     trajectory_metrics,
 )
+from app.ml.v2_research import grouped_condition_folds
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
@@ -231,3 +232,17 @@ def test_xjtu_v2_preparation_uses_both_channels_and_causal_history(
         rows[0].values["horizontal_rms_causal_5m_mean"]
         == rows[0].values["horizontal_rms"]
     )
+
+
+def test_grouped_condition_folds_are_deterministic_and_group_safe() -> None:
+    groups = np.asarray([f"B{index}" for index in range(9) for _ in range(2)])
+    conditions = np.asarray([f"C{index // 3}" for index in range(9) for _ in range(2)])
+
+    first = grouped_condition_folds(groups, conditions)
+    second = grouped_condition_folds(groups, conditions)
+
+    for (train, validation), duplicate in zip(first, second, strict=True):
+        np.testing.assert_array_equal(train, duplicate[0])
+        np.testing.assert_array_equal(validation, duplicate[1])
+        assert not set(groups[train]) & set(groups[validation])
+        assert set(conditions[validation]) == {"C0", "C1", "C2"}
