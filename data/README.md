@@ -4,16 +4,33 @@ Only manifests and schemas are tracked. `raw/`, `interim/`, and `processed/` are
 ignored because the source datasets are large and have independent usage terms.
 
 1. Read the official terms linked from the relevant manifest.
-2. Download the archive manually from the official/author source.
-3. Register the local archive without committing it:
+2. For Paderborn, first verify that the current official index still contains the
+   expected 32 archives:
+
+   `python scripts/download_paderborn_dataset.py --list-only`
+
+   The downloader supports `.partial` resume files, retries, atomic completion,
+   and a SHA256/size manifest. Before the large download, install the official
+   7-Zip command-line tool and ensure `7z` is on `PATH`; extraction is intentionally
+   blocked when no legal RAR extractor is available.
+3. XJTU-SY is only accepted from the official author page. If its folder links
+   require browser interaction, download `XJTU-SY_Bearing_Datasets.zip` manually
+   and save it as `data/raw/xjtu-sy/_archives/XJTU-SY_Bearing_Datasets.zip`.
+4. Register other authorized local archives without committing them:
 
    `python scripts/download_dataset.py --dataset paderborn --source-file <archive>`
 
-4. Extract the archive under `data/raw/<dataset>/`.
-5. For Paderborn, populate a private copy of
-   `data/schemas/paderborn_labels.csv` from official bearing metadata. Labels are
-   deliberately not inferred from filename prefixes.
-6. Prepare features from the repository root, for example:
+5. Extract the archive under `data/raw/<dataset>/`.
+6. Run the independent audit before any feature preparation or training:
+
+   `python scripts/audit_bearing_dataset.py paderborn --raw-dir data/raw/paderborn --labels data/schemas/paderborn_labels.csv`
+
+   `python scripts/audit_bearing_dataset.py xjtu-sy --raw-dir data/raw/xjtu-sy`
+
+   The Paderborn label mapping is sourced from official paper tables and is never
+   inferred from filename prefixes. A failing audit must block downstream work.
+7. Prepare features from the repository root only after the audit passes, for
+   example:
 
    `python scripts/prepare_bearing_dataset.py paderborn --raw-dir data/raw/paderborn --labels data/schemas/paderborn_labels.csv --window-size 4096 --stride 4096 --output data/processed/paderborn_fault_v1.npz`
 

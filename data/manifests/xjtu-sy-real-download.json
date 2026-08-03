@@ -1,0 +1,34 @@
+{
+  "dataset": "xjtu-sy",
+  "source": "https://biaowang.tech/xjtu-sy-bearing-datasets/",
+  "download_method": "manual_author_mirror_required",
+  "archive_name": "XJTU-SY_Bearing_Datasets.zip",
+  "archive_size_bytes": null,
+  "sha256": null,
+  "download_verified": false,
+  "extracted_files": 0,
+  "automatic_download_attempts": [
+    {
+      "mirror": "Google Drive",
+      "result": "public shared folder HTML; no direct archive response"
+    },
+    {
+      "mirror": "Dropbox",
+      "result": "public shared folder HTML; standard dl=1 returned HTML"
+    },
+    {
+      "mirror": "MediaFire",
+      "result": "public shared folder HTML requiring interactive file selection"
+    },
+    {
+      "mirror": "MEGA",
+      "result": "non-interactive request timed out; browser client required"
+    }
+  ],
+  "extraction": {
+    "status": "not_downloaded",
+    "csv_files": 0,
+    "bearing_runs": 0
+  },
+  "updated_at": "2026-08-03T00:00:00Z"
+}

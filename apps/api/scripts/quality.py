@@ -36,7 +36,10 @@ QUALITY_PATHS = [
     "tests/test_intelligent_maintenance.py",
     "tests/test_ml_pipeline.py",
     "tests/test_ml_registry.py",
+    "tests/test_dataset_tooling.py",
+    "../../scripts/audit_bearing_dataset.py",
     "../../scripts/download_dataset.py",
+    "../../scripts/download_paderborn_dataset.py",
     "../../scripts/prepare_bearing_dataset.py",
 ]
 

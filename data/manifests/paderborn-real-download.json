@@ -1,0 +1,63 @@
+{
+  "dataset": "paderborn",
+  "source": "https://groups.uni-paderborn.de/kat/BearingDataCenter/",
+  "dataset_page": "https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/data-sets-and-download",
+  "license": "CC BY-NC 4.0",
+  "download_method": "official_static_http",
+  "download_verified": false,
+  "expected_archive_count": 32,
+  "archives": [],
+  "metadata": [
+    {
+      "name": "bearing-damage.html",
+      "source_url": "https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/bearing-damage",
+      "size_bytes": 46343,
+      "sha256": "c226854a9feb35427771eac6666867fbab961dc8115877e88161dfb55ec9e530",
+      "download_complete": true,
+      "resumed": false,
+      "reused_existing": true
+    },
+    {
+      "name": "bearing-dataset-paper.pdf",
+      "source_url": "https://mb.uni-paderborn.de/fileadmin-mb/kat/PDF/Veroeffentlichungen/20160703_PHME16_CM_bearing.pdf",
+      "size_bytes": 1655352,
+      "sha256": "c1f75c79cfbcbcbfd24b32bf034cebb76d1c3ff7864827575d37387bb0955f84",
+      "download_complete": true,
+      "resumed": false,
+      "reused_existing": true
+    },
+    {
+      "name": "dataset-page.html",
+      "source_url": "https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/data-sets-and-download",
+      "size_bytes": 46687,
+      "sha256": "3419fb3364578591840e0c78dc63d18c7158dcfc865f198dfd30b572c3ccaef1",
+      "download_complete": true,
+      "resumed": false,
+      "reused_existing": true
+    },
+    {
+      "name": "operating-conditions.html",
+      "source_url": "https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/operating-conditions",
+      "size_bytes": 46573,
+      "sha256": "78840628ccaa93de014ba93b59d60297725183a5c5bf00cdb4b4e371680305d8",
+      "download_complete": true,
+      "resumed": false,
+      "reused_existing": true
+    },
+    {
+      "name": "readme_versions.txt",
+      "source_url": "https://groups.uni-paderborn.de/kat/BearingDataCenter/readme_versions.txt",
+      "size_bytes": 112,
+      "sha256": "0458cfdc33a09702e88a878b359c8c4f7606cf1d78ab4acab685a7a0b0031be0",
+      "download_complete": true,
+      "resumed": false,
+      "reused_existing": true
+    }
+  ],
+  "extraction": {
+    "status": "blocked_missing_rar_extractor",
+    "extractor": null,
+    "mat_files": 0
+  },
+  "updated_at": "2026-08-03T04:30:50.598648+00:00"
+}
