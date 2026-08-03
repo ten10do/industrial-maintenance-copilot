@@ -32,6 +32,7 @@ from app.ml.v2_research import grouped_condition_folds
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
+from generate_xjtu_v2_folds import build_manifest as build_xjtu_folds  # noqa: E402
 from prepare_bearing_v2 import prepare_xjtu_bearing  # noqa: E402
 from run_fault_v2 import _candidates as fault_candidates  # noqa: E402
 from run_rul_v2 import _candidates as rul_candidates  # noqa: E402
@@ -268,3 +269,35 @@ def test_v2_candidate_grids_match_preregistration() -> None:
         "gradient_boosting",
         "hist_gradient_boosting",
     }
+
+
+def test_xjtu_v2_outer_manifest_is_deterministic_and_condition_balanced(
+    tmp_path: Path,
+) -> None:
+    processed = tmp_path / "xjtu.npz"
+    groups = np.asarray(
+        [f"B{condition}{bearing}" for condition in range(3) for bearing in range(5)]
+    )
+    conditions = np.asarray(
+        [f"C{condition}" for condition in range(3) for _ in range(5)]
+    )
+    np.savez_compressed(
+        processed,
+        groups=groups,
+        conditions=conditions,
+        dataset_name=np.asarray("xjtu-sy"),
+        dataset_version=np.asarray("fixture-v1"),
+        feature_schema_version=np.asarray("bearing-features-v2"),
+        config_sha=np.asarray("a" * 64),
+    )
+
+    first = build_xjtu_folds(processed)
+    second = build_xjtu_folds(processed)
+
+    assert first == second
+    validation = [group for fold in first["folds"] for group in fold["validation"]]
+    assert sorted(validation) == sorted(groups.tolist())
+    assert len(validation) == len(set(validation))
+    assert all(
+        len(set(fold["validation_conditions"].values())) == 3 for fold in first["folds"]
+    )
