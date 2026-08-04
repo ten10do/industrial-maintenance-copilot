@@ -1,0 +1,94 @@
+schema_version: paderborn-fault-v2-final-v1
+locked: true
+frozen_test_accessed: false
+
+dataset: paderborn
+dataset_version: paderborn-snapshot-e513a6320d755ce5
+dataset_manifest: data/manifests/paderborn_bearing_v1.json
+dataset_manifest_sha256: d2a1271dca3d861ccd6b836cf4482a355de39f9d43115190be382c2ecca21d29
+feature_version: bearing-features-v2
+feature_cache_config_sha256: 4f9a0aed0603ed1ce4bdcdabb73adb9e734ebf8e65fa13a8e481317be440b654
+development_processed: data/processed/paderborn_fault_v2_development.npz
+development_processed_sha256: 2d89f1016f5df5e87b1c3e3789191200620fe1daa6b722328eaafe0f27e78e22
+
+fold_manifest: data/manifests/paderborn-v2-cv-folds.json
+fold_manifest_sha256: 58af152eeaf9e014b69f4c80eb740880b9b3ed3f761b0ff6f4bb2468a7c3ae71
+development_summary: docs/ml-experiments/v2/paderborn-fault-results.json
+development_summary_sha256: 1615adcfb5879d8f4f12f93c2ab6caa11f2d38f31c5fbe13b76504e546f340ec
+development_result_commit: ec7cc67959063a2bcb604c632a6b310dee7ee9a4
+
+development_bearings:
+  - K001
+  - K002
+  - K003
+  - K005
+  - K006
+  - KA01
+  - KA04
+  - KA05
+  - KA06
+  - KA07
+  - KA08
+  - KA09
+  - KA15
+  - KA16
+  - KA30
+  - KB23
+  - KB24
+  - KI03
+  - KI05
+  - KI07
+  - KI08
+  - KI14
+  - KI16
+  - KI17
+  - KI18
+  - KI21
+frozen_test_bearings:
+  - K004
+  - KA03
+  - KA22
+  - KB27
+  - KI01
+  - KI04
+
+selection_experiment_id: fault-f4-random_forest-3cc8229aab
+feature_family: F4
+algorithm: random_forest
+hyperparameters:
+  n_estimators: 300
+  max_depth: 12
+  min_samples_leaf: 2
+  max_features: sqrt
+  class_weight: balanced_subsample
+threshold: 0.50
+seed: 20260803
+window_size: 4096
+stride: 4096
+
+preprocessing:
+  feature_selection: locked F4 feature names from Development summary
+  condition_baseline: healthy rows from all 26 Development bearings only
+  condition_fallback: pooled healthy Development median and IQR
+  scaling: StandardScaler-equivalent mean and population standard deviation
+  fit_scope: all Development rows only
+  test_fit_samples: 0
+
+development_metrics:
+  macro_recall: 0.7903607267630286
+  healthy_recall: 0.6005232441135038
+  damaged_recall: 0.9801982094125533
+  pr_auc: 0.9482498603226307
+  false_negative_rate: 0.019801790587446688
+  mean_fold_macro_recall: 0.7899849087897752
+  std_fold_macro_recall: 0.25504147829348045
+  worst_fold_macro_recall: 0.4548222056805811
+  stability_score: 0.662464169643035
+
+promotion_policy:
+  minimum_macro_recall: 0.70
+  minimum_healthy_recall: 0.60
+  allow_threshold_change_after_test: false
+  final_test_evaluations: 1
+  candidate_registration_requires_final_pass: true
+  production_promotion: forbidden
