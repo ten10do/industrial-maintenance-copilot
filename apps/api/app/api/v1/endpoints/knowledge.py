@@ -85,4 +85,4 @@ def delete_knowledge(k_id: int, db: Session = Depends(get_db), user=Depends(supe
         raise not_found("知识条目不存在")
     db.delete(art)
     db.commit()
-    return OkResponse(ok=True)
+    return OkResponse(message="知识条目已删除", id=k_id)
