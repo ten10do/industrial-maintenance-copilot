@@ -16,4 +16,26 @@ Outer folds selected Extra Trees three times, HistGradientBoosting once, and Ran
 
 The uncalibrated tree-dispersion interval covered 7,087 rows, with empirical target coverage 0.3374 and mean width 14.2869 h. It is not a calibrated probability interval.
 
+## Per-bearing raw trajectory diagnostics
+
+| Bearing | Oscillations | Rate | Mean positive jump (h) | Max positive jump (h) |
+|---|---:|---:|---:|---:|
+| Bearing1_1 | 4 | 0.0328 | 0.3085 | 4.0616 |
+| Bearing1_2 | 0 | 0.0000 | 0.0368 | 0.2652 |
+| Bearing1_3 | 3 | 0.0191 | 0.1225 | 0.7438 |
+| Bearing1_4 | 8 | 0.0661 | 0.2130 | 2.5914 |
+| Bearing1_5 | 0 | 0.0000 | 0.1879 | 0.4643 |
+| Bearing2_1 | 51 | 0.1041 | 0.4245 | 1.4962 |
+| Bearing2_2 | 5 | 0.0312 | 0.1720 | 3.2457 |
+| Bearing2_3 | 26 | 0.0489 | 0.1922 | 1.8681 |
+| Bearing2_4 | 0 | 0.0000 | 0.1133 | 0.4448 |
+| Bearing2_5 | 0 | 0.0000 | 0.0705 | 0.4461 |
+| Bearing3_1 | 487 | 0.1920 | 0.5005 | 3.8494 |
+| Bearing3_2 | 700 | 0.2806 | 1.0904 | 9.3287 |
+| Bearing3_3 | 100 | 0.2703 | 0.8313 | 6.7396 |
+| Bearing3_4 | 639 | 0.4221 | 4.6758 | 23.6728 |
+| Bearing3_5 | 1 | 0.0088 | 0.1380 | 3.8813 |
+
+The condition-3 bearings dominate the instability. Counts are not normalized for run length; the preregistered promotion check therefore uses the arithmetic mean of per-bearing rates.
+
 Promotion is **rejected**: late error and raw oscillation-rate gates pass, but MAE exceeds 5 h and R² is not positive. No R0 model is registered or promoted.
