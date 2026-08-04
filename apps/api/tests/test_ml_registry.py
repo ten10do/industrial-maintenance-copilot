@@ -11,8 +11,9 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.artifacts import save_artifact_bundle
 from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features
 from app.ml.registry import promote_model, rollback_model
+from app.ml.staging import record_staging_workflow_probe
 from app.ml.types import TelemetryWindow
-from app.models.intelligence import RiskPrediction
+from app.models.intelligence import AgentRun, RiskPrediction, ToolInvocation
 from app.models.ml import DatasetVersion, ModelVersion, PredictionRecord, TrainingRun
 
 
@@ -240,4 +241,34 @@ def test_online_inference_uses_verified_production_model_and_records_lineage(
     )
     assert staging_response.status_code == 200, staging_response.text
     assert db.query(PredictionRecord).count() == 2
+    assert db.query(RiskPrediction).count() == 1
+    staging_record = (
+        db.query(PredictionRecord).order_by(PredictionRecord.id.desc()).first()
+    )
+    assert staging_record is not None
+    immutable = (
+        staging_record.prediction,
+        staging_record.probability,
+        staging_record.confidence,
+        staging_record.feature_schema_version,
+    )
+
+    probe = record_staging_workflow_probe(db, staging_record, model)
+
+    assert isinstance(probe, AgentRun)
+    assert probe.status == "completed"
+    assert probe.provider == "deterministic-staging-probe"
+    assert probe.output is not None
+    assert probe.output["work_order_created"] is False
+    assert probe.output["human_approval_required"] is True
+    assert (
+        db.query(ToolInvocation).filter(ToolInvocation.agent_run_id == probe.id).count()
+        == 6
+    )
+    assert (
+        staging_record.prediction,
+        staging_record.probability,
+        staging_record.confidence,
+        staging_record.feature_schema_version,
+    ) == immutable
     assert db.query(RiskPrediction).count() == 1

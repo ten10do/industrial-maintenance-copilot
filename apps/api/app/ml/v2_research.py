@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -273,6 +274,31 @@ class PaderbornFaultV2Preprocessor:
         if not len(self.scaler_mean) or not len(self.scaler_scale):
             raise ValueError("Paderborn V2 preprocessor has not been fitted")
         return (self._unscaled(dataset, indices) - self.scaler_mean) / self.scaler_scale
+
+    def transform_values(
+        self, values: Mapping[str, float], condition: str | None
+    ) -> NDArray[np.float64]:
+        missing = sorted(
+            set((*self.base_feature_names, *self.condition_feature_names))
+            - values.keys()
+        )
+        if missing:
+            raise ValueError(f"Paderborn V2 online features missing: {missing}")
+        base = np.asarray(
+            [values[name] for name in self.base_feature_names], dtype=np.float64
+        )
+        if self.condition_feature_names:
+            if not condition:
+                raise ValueError("Paderborn V2 online inference requires a condition")
+            center, scale = self.condition_baselines.get(
+                condition, (self.pooled_center, self.pooled_scale)
+            )
+            condition_values = np.asarray(
+                [values[name] for name in self.condition_feature_names],
+                dtype=np.float64,
+            )
+            base = np.concatenate([base, (condition_values - center) / scale])
+        return np.asarray([(base - self.scaler_mean) / self.scaler_scale])
 
     def _unscaled(
         self, dataset: V2Dataset, indices: NDArray[np.int_]

@@ -13,6 +13,7 @@ class OnlineInferenceIn(BaseModel):
     task_type: str = Field(pattern="^(failure_risk|fault_classification|rul)$")
     model_version_id: int | None = Field(default=None, gt=0)
     signal: list[float] = Field(min_length=32)
+    channels: dict[str, list[float]] = Field(default_factory=dict)
     sampling_rate_hz: float = Field(gt=0)
     started_at: datetime
     ended_at: datetime

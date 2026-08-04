@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import json
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from sklearn.ensemble import RandomForestClassifier
 
+from app.api.v1.endpoints.ml import _extract_online_features
+from app.ml.artifacts import LoadedArtifact
 from app.ml.features import FEATURE_SCHEMA_VERSION
+from app.ml.inference import predict
+from app.ml.types import FeatureVector
 from app.ml.v2_features import (
     FEATURE_SCHEMA_VERSION_V2,
     ConditionBaseline,
@@ -34,6 +40,7 @@ from app.ml.v2_research import (
     fault_fold_matrices,
     grouped_condition_folds,
 )
+from app.schemas.ml import OnlineInferenceIn
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
@@ -168,6 +175,107 @@ def test_final_fault_preprocessor_matches_fold_local_training_transform() -> Non
         (validation - mean) / scale,
     )
     assert preprocessor.output_feature_names == output_names
+    transformed_value = preprocessor.transform_values(
+        {
+            name: float(dataset.features[validation_indices[0], index])
+            for index, name in enumerate(dataset.feature_names)
+        },
+        "B",
+    )
+    np.testing.assert_allclose(
+        transformed_value,
+        preprocessor.transform(dataset, validation_indices[:1]),
+    )
+
+
+def test_v2_fault_inference_uses_damage_probability_and_honest_attribution() -> None:
+    names = (
+        "rms",
+        "kurtosis",
+        "crest_factor",
+        "spectral_centroid_hz",
+        "low_band_energy",
+        "mid_band_energy",
+        "high_band_energy",
+        "low_energy_ratio",
+        "mid_energy_ratio",
+        "high_energy_ratio",
+        "envelope_rms",
+    )
+    features = np.arange(8 * len(names), dtype=np.float64).reshape(8, len(names))
+    dataset = V2Dataset(
+        features=features,
+        targets=np.asarray(["healthy", "fault"] * 4),
+        groups=np.asarray([f"B{index}" for index in range(8)]),
+        conditions=np.asarray(["A"] * 4 + ["B"] * 4),
+        sequence_indices=np.arange(8, dtype=np.int64),
+        feature_names=names,
+        dataset_name="paderborn",
+        dataset_version="fixture-v1",
+        config_sha="a" * 64,
+        processed_sha256="b" * 64,
+    )
+    indices = np.arange(8, dtype=np.int_)
+    damaged = np.asarray([0, 1, 0, 1, 0, 1, 0, 1])
+    preprocessor = PaderbornFaultV2Preprocessor.fit(dataset, "F3", indices, damaged)
+    model = RandomForestClassifier(n_estimators=5, random_state=1).fit(
+        preprocessor.transform(dataset, indices), damaged
+    )
+    artifact = LoadedArtifact(
+        model=model,
+        preprocessor=preprocessor,
+        feature_names=preprocessor.output_feature_names,
+        metadata={
+            "task_type": "fault_classification",
+            "model_version": "fixture-v2",
+            "feature_schema_version": FEATURE_SCHEMA_VERSION_V2,
+        },
+        metrics={},
+    )
+    vector = FeatureVector(
+        bearing_id="B7",
+        window_started_at=datetime.now(UTC),
+        window_ended_at=datetime.now(UTC) + timedelta(seconds=1),
+        schema_version=FEATURE_SCHEMA_VERSION_V2,
+        values={name: float(features[7, index]) for index, name in enumerate(names)},
+        operating_condition="B",
+    )
+
+    result = predict(artifact, vector)
+
+    assert result.prediction in {"healthy", "damaged"}
+    assert result.probability == result.probabilities["damaged"]
+    assert result.top_features == ()
+
+
+def test_online_v2_feature_gateway_requires_verified_current_channels() -> None:
+    now = datetime.now(UTC)
+    vibration = np.sin(np.linspace(0, 16 * np.pi, 128)).tolist()
+    current_1 = np.cos(np.linspace(0, 16 * np.pi, 128)).tolist()
+    current_2 = np.sin(np.linspace(0, 8 * np.pi, 128)).tolist()
+    payload = OnlineInferenceIn(
+        equipment_id=1,
+        bearing_id="B1",
+        task_type="fault_classification",
+        model_version_id=1,
+        signal=vibration,
+        channels={"phase_current_1": current_1, "phase_current_2": current_2},
+        sampling_rate_hz=64_000,
+        started_at=now,
+        ended_at=now + timedelta(seconds=128 / 64_000),
+        operating_condition="N15_M07_F10",
+        context={"speed_rpm": 1500.0, "load_torque_nm": 0.7},
+    )
+
+    vector = _extract_online_features(payload, FEATURE_SCHEMA_VERSION_V2)
+
+    assert vector.schema_version == FEATURE_SCHEMA_VERSION_V2
+    assert "phase_current_1_rms" in vector.values
+    assert "current_cross_channel_correlation" in vector.values
+    with pytest.raises(ValueError, match="channels missing"):
+        _extract_online_features(
+            payload.model_copy(update={"channels": {}}), FEATURE_SCHEMA_VERSION_V2
+        )
 
 
 def test_causal_multiscale_context_cannot_see_future_values() -> None:

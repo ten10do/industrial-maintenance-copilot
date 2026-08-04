@@ -8,18 +8,32 @@ import numpy as np
 
 from app.ml.artifacts import LoadedArtifact
 from app.ml.types import FeatureVector, PredictionResult
+from app.ml.v2_research import PaderbornFaultV2Preprocessor
 
 
 def predict(artifact: LoadedArtifact, features: FeatureVector) -> PredictionResult:
     if features.schema_version != artifact.metadata["feature_schema_version"]:
         raise ValueError("online feature schema does not match model artifact")
-    missing = [name for name in artifact.feature_names if name not in features.values]
-    if missing:
-        raise ValueError(f"online feature vector is missing: {', '.join(missing)}")
-    raw = np.asarray(
-        [[features.values[name] for name in artifact.feature_names]], dtype=np.float64
+    v2_preprocessor = (
+        artifact.preprocessor
+        if isinstance(artifact.preprocessor, PaderbornFaultV2Preprocessor)
+        else None
     )
-    transformed = artifact.preprocessor.transform(raw)
+    if v2_preprocessor is not None:
+        transformed = v2_preprocessor.transform_values(
+            features.values, features.operating_condition
+        )
+    else:
+        missing = [
+            name for name in artifact.feature_names if name not in features.values
+        ]
+        if missing:
+            raise ValueError(f"online feature vector is missing: {', '.join(missing)}")
+        raw = np.asarray(
+            [[features.values[name] for name in artifact.feature_names]],
+            dtype=np.float64,
+        )
+        transformed = artifact.preprocessor.transform(raw)
     model = artifact.model
     task_type = str(artifact.metadata["task_type"])
     predicted_value = model.predict(transformed)[0]
@@ -40,21 +54,37 @@ def predict(artifact: LoadedArtifact, features: FeatureVector) -> PredictionResu
     else:
         probability_matrix = cast(Any, model).predict_proba(transformed)
         classes = [str(value) for value in cast(Any, model).classes_]
-        probabilities = {
+        raw_probabilities = {
             name: float(value)
             for name, value in zip(classes, probability_matrix[0], strict=True)
         }
         predicted_class = str(predicted_value)
-        if task_type == "failure_risk":
+        if v2_preprocessor is not None and task_type == "fault_classification":
+            probabilities = {
+                "healthy": raw_probabilities.get("0", 0.0),
+                "damaged": raw_probabilities.get("1", 0.0),
+            }
+            probability = probabilities["damaged"]
+            prediction = "damaged" if predicted_class == "1" else "healthy"
+        elif task_type == "failure_risk":
+            probabilities = raw_probabilities
             probability = probabilities.get("1")
-        elif "healthy" in probabilities:
+            prediction = predicted_class
+        elif "healthy" in raw_probabilities:
+            probabilities = raw_probabilities
             probability = 1.0 - probabilities["healthy"]
+            prediction = predicted_class
         else:
+            probabilities = raw_probabilities
             probability = probabilities[predicted_class]
+            prediction = predicted_class
         confidence = max(probabilities.values())
-        prediction = predicted_class
-    top_features = _top_contributions(
-        model, transformed[0], artifact.feature_names, str(predicted_value)
+    top_features = (
+        ()
+        if v2_preprocessor is not None
+        else _top_contributions(
+            model, transformed[0], artifact.feature_names, str(predicted_value)
+        )
     )
     return PredictionResult(
         prediction_type=task_type,
