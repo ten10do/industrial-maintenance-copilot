@@ -1,0 +1,27 @@
+{
+  "dataset": "xjtu-sy",
+  "split_version": "xjtu-rul-split-v1",
+  "strategy": "pre-metric condition-balanced bearing-run split",
+  "group": "bearing_id",
+  "seed": 20260803,
+  "locked": true,
+  "designed_before_test_evaluation": true,
+  "train": [
+    "Bearing1_2", "Bearing1_3", "Bearing1_5",
+    "Bearing2_2", "Bearing2_3", "Bearing2_5",
+    "Bearing3_2", "Bearing3_3", "Bearing3_5"
+  ],
+  "validation": ["Bearing1_1", "Bearing2_4", "Bearing3_1"],
+  "test": ["Bearing1_4", "Bearing2_1", "Bearing3_4"],
+  "operating_condition_distribution": {
+    "train": {"35Hz12kN": 3, "37.5Hz11kN": 3, "40Hz10kN": 3},
+    "validation": {"35Hz12kN": 1, "37.5Hz11kN": 1, "40Hz10kN": 1},
+    "test": {"35Hz12kN": 1, "37.5Hz11kN": 1, "40Hz10kN": 1}
+  },
+  "intersections": {
+    "train_validation": [],
+    "train_test": [],
+    "validation_test": []
+  },
+  "notes": "Each complete run belongs to exactly one split. Allocation uses operating condition only and was locked before lifecycle length or metric inspection."
+}

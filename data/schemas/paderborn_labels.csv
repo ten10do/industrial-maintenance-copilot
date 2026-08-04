@@ -1,0 +1,33 @@
+bearing_id,fault_class,condition_group,damage_origin,fault_location,fault_type,damage_level,damage_method,source_document,source_table,notes
+K001,healthy,four_measurement_settings,healthy,none,none,unknown,none,Lessmeier et al. 2016,Table 6; Table 7,Run-in period greater than 50 h
+K002,healthy,four_measurement_settings,healthy,none,none,unknown,none,Lessmeier et al. 2016,Table 6; Table 7,Run-in period 19 h
+K003,healthy,four_measurement_settings,healthy,none,none,unknown,none,Lessmeier et al. 2016,Table 6; Table 7,Run-in period 1 h
+K004,healthy,four_measurement_settings,healthy,none,none,unknown,none,Lessmeier et al. 2016,Table 6; Table 7,Run-in period 5 h
+K005,healthy,four_measurement_settings,healthy,none,none,unknown,none,Lessmeier et al. 2016,Table 6; Table 7,Run-in period 10 h
+K006,healthy,four_measurement_settings,healthy,none,none,unknown,none,Lessmeier et al. 2016,Table 6; Table 7,Run-in period 16 h
+KA01,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,1,EDM,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KA03,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,2,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KA05,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,1,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KA06,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,2,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KA07,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,1,drilling,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KA08,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,2,drilling,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KA09,outer_ring,four_measurement_settings,artificial,outer_ring,single_point_damage,2,drilling,Lessmeier et al. 2016,Table 4; Table 6,Official component OR
+KI01,inner_ring,four_measurement_settings,artificial,inner_ring,single_point_damage,1,EDM,Lessmeier et al. 2016,Table 4; Table 6,Official component IR
+KI03,inner_ring,four_measurement_settings,artificial,inner_ring,single_point_damage,1,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component IR
+KI05,inner_ring,four_measurement_settings,artificial,inner_ring,single_point_damage,1,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component IR
+KI07,inner_ring,four_measurement_settings,artificial,inner_ring,single_point_damage,2,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component IR
+KI08,inner_ring,four_measurement_settings,artificial,inner_ring,single_point_damage,2,electric_engraver,Lessmeier et al. 2016,Table 4; Table 6,Official component IR
+KA04,outer_ring,four_measurement_settings,real,outer_ring,fatigue_pitting,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,S; no repetition; single point
+KA15,outer_ring,four_measurement_settings,real,outer_ring,plastic_deformation_indentations,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,S; no repetition; single point
+KA16,outer_ring,four_measurement_settings,real,outer_ring,fatigue_pitting,2,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,R; random; single point
+KA22,outer_ring,four_measurement_settings,real,outer_ring,fatigue_pitting,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,S; no repetition; single point
+KA30,outer_ring,four_measurement_settings,real,outer_ring,plastic_deformation_indentations,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,R; random; distributed
+KB23,combined_inner_outer,four_measurement_settings,real,inner_ring_with_outer_ring,fatigue_pitting,2,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,M; random; single point; official element IR (+OR)
+KB24,combined_inner_outer,four_measurement_settings,real,inner_ring_with_outer_ring,fatigue_pitting,3,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,M; no repetition; distributed; official element IR (+OR)
+KB27,combined_inner_outer,four_measurement_settings,real,outer_and_inner_ring,plastic_deformation_indentations,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,M; random; distributed; official element OR + IR
+KI04,inner_ring,four_measurement_settings,real,inner_ring,fatigue_pitting,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,M; no repetition; single point
+KI14,inner_ring,four_measurement_settings,real,inner_ring,fatigue_pitting,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,M; no repetition; single point
+KI16,inner_ring,four_measurement_settings,real,inner_ring,fatigue_pitting,3,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,S; no repetition; single point
+KI17,inner_ring,four_measurement_settings,real,inner_ring,fatigue_pitting,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,R; random; single point
+KI18,inner_ring,four_measurement_settings,real,inner_ring,fatigue_pitting,2,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,S; no repetition; single point
+KI21,inner_ring,four_measurement_settings,real,inner_ring,fatigue_pitting,1,accelerated_lifetime_test,Lessmeier et al. 2016,Table 5; Table 6,S; no repetition; single point

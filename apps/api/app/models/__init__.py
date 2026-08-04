@@ -43,6 +43,14 @@ from app.models.maintenance import (
     WorkOrderReport,
     WorkOrderSparePart,
 )
+from app.models.ml import (
+    DatasetVersion,
+    MLFeatureDefinition,
+    ModelMetric,
+    ModelVersion,
+    PredictionRecord,
+    TrainingRun,
+)
 from app.models.user import Skill, TechnicianProfile, User
 from app.models.workorder import (
     WorkOrder,
@@ -59,6 +67,7 @@ __all__ = [
     "AgentRun",
     "AnomalyEvent",
     "Attachment",
+    "DatasetVersion",
     "Equipment",
     "EquipmentSensor",
     "EquipmentStatusEnum",
@@ -71,12 +80,16 @@ __all__ = [
     "KnowledgeCategoryEnum",
     "KnowledgeChunk",
     "LaborEntry",
+    "MLFeatureDefinition",
     "MaintenanceLog",
     "MaintenanceLogTypeEnum",
     "MaintenanceRecommendation",
     "MaintenanceVerification",
+    "ModelMetric",
+    "ModelVersion",
     "Notification",
     "OperationApproval",
+    "PredictionRecord",
     "PriorityEnum",
     "RiskLevelEnum",
     "RiskPrediction",
@@ -87,6 +100,7 @@ __all__ = [
     "TechnicianProfile",
     "TelemetryRecord",
     "ToolInvocation",
+    "TrainingRun",
     "UrgencyEnum",
     "User",
     "WorkOrder",

@@ -1,0 +1,40 @@
+dataset: paderborn
+task_type: fault_classification
+processed_path: ../../data/processed/paderborn_fault_v1.npz
+output_dir: ../../artifacts
+run_name: paderborn-fault-v1
+feature_schema_version: bearing-features-v1
+window_size: 4096
+stride: 4096
+seed: 20260803
+split:
+  strategy: locked_group_manifest
+  group: bearing_id
+  manifest: ../../data/manifests/paderborn-split-v1.json
+preprocessing:
+  fit_split: train
+  feature_selector: not_configured
+selection_split: validation
+test_usage: final_selected_model_evaluation_once
+leakage_audit_path: ../../data/processed/leakage-audit-v1.json
+models:
+  - algorithm: logistic_regression
+    hyperparameters:
+      C: 1.0
+      class_weight: balanced
+      n_jobs: -1
+  - algorithm: random_forest
+    hyperparameters:
+      n_estimators: 300
+      max_depth: 12
+      min_samples_leaf: 2
+      class_weight: balanced
+  - algorithm: hist_gradient_boosting
+    hyperparameters:
+      max_iter: 150
+      learning_rate: 0.05
+minimum_recall: 0.7
+evaluation_metric: pr_auc
+promotion_threshold:
+  minimum_recall: 0.7
+prediction_horizon: current 4-second measurement condition; not a calendar failure forecast
