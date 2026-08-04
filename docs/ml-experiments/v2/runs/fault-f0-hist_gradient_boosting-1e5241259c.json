@@ -1,0 +1,242 @@
+{
+  "algorithm": "hist_gradient_boosting",
+  "artifact_hash": "3c0aef0d63013554e195914410e6579683e4a1477d152f080f3b7d19254f7d7b",
+  "dataset_version": "paderborn-snapshot-e513a6320d755ce5",
+  "experiment_id": "fault-f0-hist_gradient_boosting-1e5241259c",
+  "feature_count": 36,
+  "feature_family": "F0",
+  "feature_names": [
+    "mean",
+    "std",
+    "variance",
+    "rms",
+    "max",
+    "min",
+    "peak_to_peak",
+    "absolute_mean",
+    "skewness",
+    "kurtosis",
+    "crest_factor",
+    "shape_factor",
+    "impulse_factor",
+    "clearance_factor",
+    "envelope_energy",
+    "dominant_frequency_hz",
+    "spectral_centroid_hz",
+    "spectral_rms_hz",
+    "spectral_entropy",
+    "low_band_energy",
+    "mid_band_energy",
+    "high_band_energy",
+    "low_energy_ratio",
+    "mid_energy_ratio",
+    "high_energy_ratio",
+    "rolling_mean",
+    "rolling_std",
+    "rolling_rms",
+    "rms_slope",
+    "kurtosis_slope",
+    "envelope_energy_slope",
+    "degradation_rate",
+    "recent_vs_baseline_delta",
+    "context_load_torque_nm",
+    "context_radial_force_n",
+    "context_speed_rpm"
+  ],
+  "feature_version": "bearing-features-v2",
+  "finished_at": "2026-08-04T01:46:23.438883+00:00",
+  "fold_manifest": "data/manifests/paderborn-v2-cv-folds.json",
+  "fold_metrics": [
+    {
+      "confusion_matrix": [
+        [
+          4964,
+          0
+        ],
+        [
+          273,
+          24600
+        ]
+      ],
+      "damaged_recall": 0.9890242431552285,
+      "false_negative_rate": 0.010975756844771478,
+      "false_positive_rate": 0.0,
+      "fold_id": "fold-1",
+      "healthy_recall": 1.0,
+      "macro_f1": 0.9838598782149048,
+      "macro_precision": 0.973935459232385,
+      "macro_recall": 0.9945121215776143,
+      "pr_auc": 0.999998442312162,
+      "roc_auc": 0.9999922086066679,
+      "validation_bearings": [
+        "K001",
+        "KA09",
+        "KA16",
+        "KB23",
+        "KI08",
+        "KI17"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          4973,
+          1
+        ],
+        [
+          3933,
+          15978
+        ]
+      ],
+      "damaged_recall": 0.802470995931897,
+      "false_negative_rate": 0.19752900406810303,
+      "false_positive_rate": 0.00020104543626864313,
+      "fold_id": "fold-2",
+      "healthy_recall": 0.9997989545637314,
+      "macro_f1": 0.8034789498491628,
+      "macro_precision": 0.7791625108617535,
+      "macro_recall": 0.9011349752478142,
+      "pr_auc": 0.995553884376683,
+      "roc_auc": 0.9827486436071964,
+      "validation_bearings": [
+        "K003",
+        "KA06",
+        "KB24",
+        "KI07",
+        "KI16"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          8,
+          4967
+        ],
+        [
+          79,
+          19792
+        ]
+      ],
+      "damaged_recall": 0.9960243571033164,
+      "false_negative_rate": 0.003975642896683618,
+      "false_positive_rate": 0.998391959798995,
+      "fold_id": "fold-3",
+      "healthy_recall": 0.0016080402010050252,
+      "macro_f1": 0.44504892193621853,
+      "macro_precision": 0.44567005240866786,
+      "macro_recall": 0.4988161986521607,
+      "pr_auc": 0.8125759181659264,
+      "roc_auc": 0.5207492800927793,
+      "validation_bearings": [
+        "K002",
+        "KA04",
+        "KA08",
+        "KI03",
+        "KI21"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          0,
+          4967
+        ],
+        [
+          4719,
+          15169
+        ]
+      ],
+      "damaged_recall": 0.7627212389380531,
+      "false_negative_rate": 0.2372787610619469,
+      "false_positive_rate": 1.0,
+      "fold_id": "fold-4",
+      "healthy_recall": 0.0,
+      "macro_f1": 0.3789976014391365,
+      "macro_precision": 0.3766636869288836,
+      "macro_recall": 0.38136061946902655,
+      "pr_auc": 0.890323858366729,
+      "roc_auc": 0.6136548282218555,
+      "validation_bearings": [
+        "K005",
+        "KA05",
+        "KA15",
+        "KI05",
+        "KI18"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          4965,
+          0
+        ],
+        [
+          897,
+          18995
+        ]
+      ],
+      "damaged_recall": 0.9549064950733963,
+      "false_negative_rate": 0.04509350492660369,
+      "false_positive_rate": 0.0,
+      "fold_id": "fold-5",
+      "healthy_recall": 1.0,
+      "macro_f1": 0.9470423654278954,
+      "macro_precision": 0.9234902763561924,
+      "macro_recall": 0.9774532475366982,
+      "pr_auc": 0.9999042974352006,
+      "roc_auc": 0.9996181342998415,
+      "validation_bearings": [
+        "K006",
+        "KA01",
+        "KA07",
+        "KA30",
+        "KI14"
+      ]
+    }
+  ],
+  "frozen_test_accessed": false,
+  "git_sha": "e5bdcb3ca807cb16a71fac9ba4d22709b1ec8d68",
+  "hyperparameters": {
+    "l2_regularization": 1.0,
+    "learning_rate": 0.03,
+    "max_iter": 150,
+    "max_leaf_nodes": 15
+  },
+  "metrics": {
+    "confusion_matrix": [
+      [
+        14910,
+        9935
+      ],
+      [
+        9901,
+        94534
+      ]
+    ],
+    "damaged_recall": 0.9051946186623259,
+    "false_negative_rate": 0.09480538133767413,
+    "false_positive_rate": 0.39987925135842217,
+    "healthy_recall": 0.6001207486415778,
+    "macro_f1": 0.7527894761283715,
+    "macro_precision": 0.752921574125246,
+    "macro_recall": 0.7526576836519518,
+    "mean_fold_macro_recall": 0.7506554324966628,
+    "mean_fold_pr_auc": 0.9396712801313403,
+    "pr_auc": 0.9178826321886836,
+    "roc_auc": 0.7751632648874884,
+    "stability_score": 0.6215529373357334,
+    "std_fold_macro_recall": 0.25820499032185884,
+    "std_fold_pr_auc": 0.07612968855248771,
+    "worst_fold_macro_recall": 0.38136061946902655
+  },
+  "processed_sha256": "2d89f1016f5df5e87b1c3e3789191200620fe1daa6b722328eaafe0f27e78e22",
+  "promotion": {
+    "checks": {
+      "healthy_recall_at_least_0_60": true,
+      "macro_recall_at_least_0_70": true
+    },
+    "passed": true
+  },
+  "seed": 20260803,
+  "started_at": "2026-08-04T01:46:13.964249+00:00"
+}

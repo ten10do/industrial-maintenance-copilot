@@ -1,0 +1,243 @@
+{
+  "algorithm": "random_forest",
+  "artifact_hash": "931ae26f598dabb52c7d906a4ba4d6bb5261566b25c99eef49d2d74b31536f1e",
+  "dataset_version": "paderborn-snapshot-e513a6320d755ce5",
+  "experiment_id": "fault-f0-random_forest-277e760db0",
+  "feature_count": 36,
+  "feature_family": "F0",
+  "feature_names": [
+    "mean",
+    "std",
+    "variance",
+    "rms",
+    "max",
+    "min",
+    "peak_to_peak",
+    "absolute_mean",
+    "skewness",
+    "kurtosis",
+    "crest_factor",
+    "shape_factor",
+    "impulse_factor",
+    "clearance_factor",
+    "envelope_energy",
+    "dominant_frequency_hz",
+    "spectral_centroid_hz",
+    "spectral_rms_hz",
+    "spectral_entropy",
+    "low_band_energy",
+    "mid_band_energy",
+    "high_band_energy",
+    "low_energy_ratio",
+    "mid_energy_ratio",
+    "high_energy_ratio",
+    "rolling_mean",
+    "rolling_std",
+    "rolling_rms",
+    "rms_slope",
+    "kurtosis_slope",
+    "envelope_energy_slope",
+    "degradation_rate",
+    "recent_vs_baseline_delta",
+    "context_load_torque_nm",
+    "context_radial_force_n",
+    "context_speed_rpm"
+  ],
+  "feature_version": "bearing-features-v2",
+  "finished_at": "2026-08-04T01:32:31.008118+00:00",
+  "fold_manifest": "data/manifests/paderborn-v2-cv-folds.json",
+  "fold_metrics": [
+    {
+      "confusion_matrix": [
+        [
+          4962,
+          2
+        ],
+        [
+          71,
+          24802
+        ]
+      ],
+      "damaged_recall": 0.9971454991356089,
+      "false_negative_rate": 0.0028545008643910963,
+      "false_positive_rate": 0.00040290088638195165,
+      "fold_id": "fold-1",
+      "healthy_recall": 0.999597099113618,
+      "macro_f1": 0.9956141582092559,
+      "macro_precision": 0.992906236673786,
+      "macro_recall": 0.9983712991246134,
+      "pr_auc": 0.9999992429134216,
+      "roc_auc": 0.9999962095924331,
+      "validation_bearings": [
+        "K001",
+        "KA09",
+        "KA16",
+        "KB23",
+        "KI08",
+        "KI17"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          4559,
+          415
+        ],
+        [
+          522,
+          19389
+        ]
+      ],
+      "damaged_recall": 0.973783335844508,
+      "false_negative_rate": 0.026216664155491953,
+      "false_positive_rate": 0.08343385605146758,
+      "fold_id": "fold-2",
+      "healthy_recall": 0.9165661439485324,
+      "macro_f1": 0.9416097151177776,
+      "macro_precision": 0.9381544777473044,
+      "macro_recall": 0.9451747398965202,
+      "pr_auc": 0.9988556536134158,
+      "roc_auc": 0.9953276095512849,
+      "validation_bearings": [
+        "K003",
+        "KA06",
+        "KB24",
+        "KI07",
+        "KI16"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          0,
+          4975
+        ],
+        [
+          54,
+          19817
+        ]
+      ],
+      "damaged_recall": 0.9972824719440391,
+      "false_negative_rate": 0.002717528055960927,
+      "false_positive_rate": 1.0,
+      "fold_id": "fold-3",
+      "healthy_recall": 0.0,
+      "macro_f1": 0.44370060228824754,
+      "macro_precision": 0.3996652145853501,
+      "macro_recall": 0.49864123597201954,
+      "pr_auc": 0.8706725214413236,
+      "roc_auc": 0.5596665426675422,
+      "validation_bearings": [
+        "K002",
+        "KA04",
+        "KA08",
+        "KI03",
+        "KI21"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          0,
+          4967
+        ],
+        [
+          4562,
+          15326
+        ]
+      ],
+      "damaged_recall": 0.7706154465004023,
+      "false_negative_rate": 0.22938455349959774,
+      "false_positive_rate": 1.0,
+      "fold_id": "fold-4",
+      "healthy_recall": 0.0,
+      "macro_f1": 0.3814240561459396,
+      "macro_precision": 0.37761789779727,
+      "macro_recall": 0.38530772325020113,
+      "pr_auc": 0.9058786757103541,
+      "roc_auc": 0.639111417738409,
+      "validation_bearings": [
+        "K005",
+        "KA05",
+        "KA15",
+        "KI05",
+        "KI18"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          4965,
+          0
+        ],
+        [
+          444,
+          19448
+        ]
+      ],
+      "damaged_recall": 0.9776794691333199,
+      "false_negative_rate": 0.022320530866680066,
+      "false_positive_rate": 0.0,
+      "fold_id": "fold-5",
+      "healthy_recall": 1.0,
+      "macro_f1": 0.9729572356843381,
+      "macro_precision": 0.9589572933998891,
+      "macro_recall": 0.98883973456666,
+      "pr_auc": 0.999972915681645,
+      "roc_auc": 0.9998914784347054,
+      "validation_bearings": [
+        "K006",
+        "KA01",
+        "KA07",
+        "KA30",
+        "KI14"
+      ]
+    }
+  ],
+  "frozen_test_accessed": false,
+  "git_sha": "73f210e06b13d526488e23883610a9a1b0ce4544",
+  "hyperparameters": {
+    "class_weight": "balanced_subsample",
+    "max_depth": 8,
+    "max_features": "sqrt",
+    "min_samples_leaf": 2,
+    "n_estimators": 300
+  },
+  "metrics": {
+    "confusion_matrix": [
+      [
+        14486,
+        10359
+      ],
+      [
+        5653,
+        98782
+      ]
+    ],
+    "damaged_recall": 0.9458706372384736,
+    "false_negative_rate": 0.054129362761526356,
+    "false_positive_rate": 0.4169450593680821,
+    "healthy_recall": 0.5830549406319179,
+    "macro_f1": 0.7845401238449436,
+    "macro_precision": 0.8121934701687048,
+    "macro_recall": 0.7644627889351958,
+    "mean_fold_macro_recall": 0.7632669465620029,
+    "mean_fold_pr_auc": 0.955075801872032,
+    "pr_auc": 0.9299537558552242,
+    "roc_auc": 0.7850318121633584,
+    "stability_score": 0.6305779255863349,
+    "std_fold_macro_recall": 0.2653780419513362,
+    "std_fold_pr_auc": 0.05566832631211928,
+    "worst_fold_macro_recall": 0.38530772325020113
+  },
+  "processed_sha256": "2d89f1016f5df5e87b1c3e3789191200620fe1daa6b722328eaafe0f27e78e22",
+  "promotion": {
+    "checks": {
+      "healthy_recall_at_least_0_60": false,
+      "macro_recall_at_least_0_70": true
+    },
+    "passed": false
+  },
+  "seed": 20260803,
+  "started_at": "2026-08-04T01:30:25.405425+00:00"
+}
