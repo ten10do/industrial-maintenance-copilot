@@ -17,7 +17,9 @@ def promote_model(db: Session, model_id: int, target_status: str) -> ModelVersio
         raise LookupError("model version not found")
     if target_status in {"staging", "production"}:
         promotion = model.metrics.get("promotion")
-        if not isinstance(promotion, dict) or promotion.get("eligible") is not True:
+        if not isinstance(promotion, dict) or not (
+            promotion.get("eligible") is True or promotion.get("passed") is True
+        ):
             raise ValueError("model has no passing, code-generated promotion decision")
     if target_status == "production":
         active = (

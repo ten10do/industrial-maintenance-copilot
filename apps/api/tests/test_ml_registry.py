@@ -86,6 +86,11 @@ def test_promote_and_rollback_keep_one_production_model_per_task(db):
         promote_model(db, first.id, "production")
     with pytest.raises(ValueError, match="promotion decision"):
         promote_model(db, first.id, "staging")
+    first.metrics = {"promotion": {"passed": True}}
+    db.commit()
+    promote_model(db, first.id, "staging")
+    assert first.status == "staging"
+    assert not first.is_production
     first.metrics = {"promotion": {"eligible": True}}
     db.commit()
     promote_model(db, first.id, "production")
