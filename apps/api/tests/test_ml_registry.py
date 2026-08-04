@@ -11,9 +11,16 @@ from sklearn.preprocessing import StandardScaler
 from app.ml.artifacts import save_artifact_bundle
 from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features
 from app.ml.registry import promote_model, rollback_model
+from app.ml.staging import record_staging_workflow_probe
 from app.ml.types import TelemetryWindow
-from app.models.intelligence import RiskPrediction
+from app.models.intelligence import (
+    AgentRun,
+    RiskPrediction,
+    SparePartReservation,
+    ToolInvocation,
+)
 from app.models.ml import DatasetVersion, ModelVersion, PredictionRecord, TrainingRun
+from app.models.workorder import WorkOrder
 
 
 def _registered_model(
@@ -86,6 +93,11 @@ def test_promote_and_rollback_keep_one_production_model_per_task(db):
         promote_model(db, first.id, "production")
     with pytest.raises(ValueError, match="promotion decision"):
         promote_model(db, first.id, "staging")
+    first.metrics = {"promotion": {"passed": True}}
+    db.commit()
+    promote_model(db, first.id, "staging")
+    assert first.status == "staging"
+    assert not first.is_production
     first.metrics = {"promotion": {"eligible": True}}
     db.commit()
     promote_model(db, first.id, "production")
@@ -219,6 +231,25 @@ def test_online_inference_uses_verified_production_model_and_records_lineage(
     model.status = "staging"
     model.is_production = False
     db.commit()
+    equipment_state = (equipment.status, equipment.health_score, equipment.risk_level)
+    work_order_count = db.query(WorkOrder).count()
+    reservation_count = db.query(SparePartReservation).count()
+    implicit_staging_response = client.post(
+        "/api/v1/ml/inference",
+        headers=auth_supervisor,
+        json={
+            "equipment_id": equipment.id,
+            "bearing_id": "synthetic-bearing",
+            "task_type": "failure_risk",
+            "signal": signal.tolist(),
+            "sampling_rate_hz": 256,
+            "started_at": now.isoformat(),
+            "ended_at": (now + timedelta(seconds=1)).isoformat(),
+            "context": {"speed_rpm": 1500.0},
+        },
+    )
+    assert implicit_staging_response.status_code == 409
+    assert db.query(PredictionRecord).count() == 1
     staging_payload = {
         "equipment_id": equipment.id,
         "bearing_id": "synthetic-bearing",
@@ -236,3 +267,39 @@ def test_online_inference_uses_verified_production_model_and_records_lineage(
     assert staging_response.status_code == 200, staging_response.text
     assert db.query(PredictionRecord).count() == 2
     assert db.query(RiskPrediction).count() == 1
+    staging_record = (
+        db.query(PredictionRecord).order_by(PredictionRecord.id.desc()).first()
+    )
+    assert staging_record is not None
+    immutable = (
+        staging_record.prediction,
+        staging_record.probability,
+        staging_record.confidence,
+        staging_record.feature_schema_version,
+    )
+
+    probe = record_staging_workflow_probe(db, staging_record, model)
+
+    assert isinstance(probe, AgentRun)
+    assert probe.status == "completed"
+    assert probe.provider == "deterministic-staging-probe"
+    assert probe.output is not None
+    assert probe.output["work_order_created"] is False
+    assert probe.output["human_approval_required"] is True
+    assert (
+        db.query(ToolInvocation).filter(ToolInvocation.agent_run_id == probe.id).count()
+        == 6
+    )
+    assert (
+        staging_record.prediction,
+        staging_record.probability,
+        staging_record.confidence,
+        staging_record.feature_schema_version,
+    ) == immutable
+    assert db.query(RiskPrediction).count() == 1
+    assert db.query(WorkOrder).count() == work_order_count
+    assert db.query(SparePartReservation).count() == reservation_count
+    db.refresh(equipment)
+    assert (equipment.status, equipment.health_score, equipment.risk_level) == (
+        equipment_state
+    )

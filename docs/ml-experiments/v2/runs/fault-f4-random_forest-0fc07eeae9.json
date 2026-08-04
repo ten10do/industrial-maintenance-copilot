@@ -1,0 +1,300 @@
+{
+  "algorithm": "random_forest",
+  "artifact_hash": "f48b21d6073cc09b3a9bb2e95771338fb4541eb639bad8c76e038fc0cd80d8a5",
+  "dataset_version": "paderborn-snapshot-e513a6320d755ce5",
+  "experiment_id": "fault-f4-random_forest-0fc07eeae9",
+  "feature_count": 93,
+  "feature_family": "F4",
+  "feature_names": [
+    "mean",
+    "std",
+    "variance",
+    "rms",
+    "max",
+    "min",
+    "peak_to_peak",
+    "absolute_mean",
+    "skewness",
+    "kurtosis",
+    "crest_factor",
+    "shape_factor",
+    "impulse_factor",
+    "clearance_factor",
+    "envelope_energy",
+    "dominant_frequency_hz",
+    "spectral_centroid_hz",
+    "spectral_rms_hz",
+    "spectral_entropy",
+    "low_band_energy",
+    "mid_band_energy",
+    "high_band_energy",
+    "low_energy_ratio",
+    "mid_energy_ratio",
+    "high_energy_ratio",
+    "rolling_mean",
+    "rolling_std",
+    "rolling_rms",
+    "rms_slope",
+    "kurtosis_slope",
+    "envelope_energy_slope",
+    "degradation_rate",
+    "recent_vs_baseline_delta",
+    "context_load_torque_nm",
+    "context_radial_force_n",
+    "context_speed_rpm",
+    "envelope_high_band_energy",
+    "envelope_high_energy_ratio",
+    "envelope_kurtosis",
+    "envelope_low_band_energy",
+    "envelope_low_energy_ratio",
+    "envelope_mid_band_energy",
+    "envelope_mid_energy_ratio",
+    "envelope_peak",
+    "envelope_rms",
+    "envelope_spectral_entropy",
+    "current_cross_channel_correlation",
+    "current_cross_energy_ratio_first_over_second",
+    "current_cross_kurtosis_ratio_first_over_second",
+    "current_cross_rms_ratio_first_over_second",
+    "current_cross_spectral_energy_ratio_first_over_second",
+    "phase_current_1_crest_factor",
+    "phase_current_1_envelope_energy",
+    "phase_current_1_envelope_kurtosis",
+    "phase_current_1_envelope_rms",
+    "phase_current_1_high_band_energy",
+    "phase_current_1_high_band_energy_ratio",
+    "phase_current_1_kurtosis",
+    "phase_current_1_low_band_energy",
+    "phase_current_1_low_band_energy_ratio",
+    "phase_current_1_mid_band_energy",
+    "phase_current_1_mid_band_energy_ratio",
+    "phase_current_1_rms",
+    "phase_current_1_spectral_centroid_hz",
+    "phase_current_1_spectral_energy",
+    "phase_current_1_spectral_entropy",
+    "phase_current_1_std",
+    "phase_current_2_crest_factor",
+    "phase_current_2_envelope_energy",
+    "phase_current_2_envelope_kurtosis",
+    "phase_current_2_envelope_rms",
+    "phase_current_2_high_band_energy",
+    "phase_current_2_high_band_energy_ratio",
+    "phase_current_2_kurtosis",
+    "phase_current_2_low_band_energy",
+    "phase_current_2_low_band_energy_ratio",
+    "phase_current_2_mid_band_energy",
+    "phase_current_2_mid_band_energy_ratio",
+    "phase_current_2_rms",
+    "phase_current_2_spectral_centroid_hz",
+    "phase_current_2_spectral_energy",
+    "phase_current_2_spectral_entropy",
+    "phase_current_2_std",
+    "condition_normalized_rms",
+    "condition_normalized_kurtosis",
+    "condition_normalized_crest_factor",
+    "condition_normalized_spectral_centroid_hz",
+    "condition_normalized_low_band_energy",
+    "condition_normalized_mid_band_energy",
+    "condition_normalized_high_band_energy",
+    "condition_normalized_low_energy_ratio",
+    "condition_normalized_mid_energy_ratio",
+    "condition_normalized_high_energy_ratio"
+  ],
+  "feature_version": "bearing-features-v2",
+  "finished_at": "2026-08-04T02:18:19.363853+00:00",
+  "fold_manifest": "data/manifests/paderborn-v2-cv-folds.json",
+  "fold_metrics": [
+    {
+      "confusion_matrix": [
+        [
+          4962,
+          2
+        ],
+        [
+          20,
+          24853
+        ]
+      ],
+      "damaged_recall": 0.9991959152494673,
+      "false_negative_rate": 0.0008040847505327298,
+      "false_positive_rate": 0.00040290088638195165,
+      "fold_id": "fold-1",
+      "healthy_recall": 0.999597099113618,
+      "macro_f1": 0.9986728244036458,
+      "macro_precision": 0.9979525406329008,
+      "macro_recall": 0.9993965071815427,
+      "pr_auc": 0.9999997590165659,
+      "roc_auc": 0.9999988175224257,
+      "validation_bearings": [
+        "K001",
+        "KA09",
+        "KA16",
+        "KB23",
+        "KI08",
+        "KI17"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          4971,
+          3
+        ],
+        [
+          113,
+          19798
+        ]
+      ],
+      "damaged_recall": 0.9943247451157652,
+      "false_negative_rate": 0.005675254884234815,
+      "false_positive_rate": 0.0006031363088058184,
+      "fold_id": "fold-2",
+      "healthy_recall": 0.9993968636911942,
+      "macro_f1": 0.9927729302999893,
+      "macro_precision": 0.9888109496333523,
+      "macro_recall": 0.9968608044034797,
+      "pr_auc": 0.9999578692206743,
+      "roc_auc": 0.9998318512555784,
+      "validation_bearings": [
+        "K003",
+        "KA06",
+        "KB24",
+        "KI07",
+        "KI16"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          0,
+          4975
+        ],
+        [
+          3,
+          19868
+        ]
+      ],
+      "damaged_recall": 0.9998490262191133,
+      "false_negative_rate": 0.00015097378088668734,
+      "false_positive_rate": 1.0,
+      "fold_id": "fold-3",
+      "healthy_recall": 0.0,
+      "macro_f1": 0.44433510757257233,
+      "macro_precision": 0.3998711910799823,
+      "macro_recall": 0.49992451310955666,
+      "pr_auc": 0.8636572510050184,
+      "roc_auc": 0.6632387087670248,
+      "validation_bearings": [
+        "K002",
+        "KA04",
+        "KA08",
+        "KI03",
+        "KI21"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          1,
+          4966
+        ],
+        [
+          1261,
+          18627
+        ]
+      ],
+      "damaged_recall": 0.9365949316170555,
+      "false_negative_rate": 0.06340506838294446,
+      "false_positive_rate": 0.9997986712301188,
+      "fold_id": "fold-4",
+      "healthy_recall": 0.00020132876988121604,
+      "macro_f1": 0.4285545505897216,
+      "macro_precision": 0.39515311593872393,
+      "macro_recall": 0.4683981301934684,
+      "pr_auc": 0.848277774487728,
+      "roc_auc": 0.5696013439302777,
+      "validation_bearings": [
+        "K005",
+        "KA05",
+        "KA15",
+        "KI05",
+        "KI18"
+      ]
+    },
+    {
+      "confusion_matrix": [
+        [
+          4964,
+          1
+        ],
+        [
+          19,
+          19873
+        ]
+      ],
+      "damaged_recall": 0.999044842147597,
+      "false_negative_rate": 0.0009551578524029658,
+      "false_positive_rate": 0.00020140986908356862,
+      "fold_id": "fold-5",
+      "healthy_recall": 0.9997985901309164,
+      "macro_f1": 0.9987433017126871,
+      "macro_precision": 0.9980683594625268,
+      "macro_recall": 0.9994217161392567,
+      "pr_auc": 0.9999992670032422,
+      "roc_auc": 0.9999971193893147,
+      "validation_bearings": [
+        "K006",
+        "KA01",
+        "KA07",
+        "KA30",
+        "KI14"
+      ]
+    }
+  ],
+  "frozen_test_accessed": false,
+  "git_sha": "e5bdcb3ca807cb16a71fac9ba4d22709b1ec8d68",
+  "hyperparameters": {
+    "class_weight": "balanced_subsample",
+    "max_depth": null,
+    "max_features": "sqrt",
+    "min_samples_leaf": 1,
+    "n_estimators": 300
+  },
+  "metrics": {
+    "confusion_matrix": [
+      [
+        14898,
+        9947
+      ],
+      [
+        1416,
+        103019
+      ]
+    ],
+    "damaged_recall": 0.9864413271412841,
+    "false_negative_rate": 0.013558672858715926,
+    "false_positive_rate": 0.40036224592473335,
+    "healthy_recall": 0.5996377540752666,
+    "macro_f1": 0.8358284123611253,
+    "macro_precision": 0.9125751705442726,
+    "macro_recall": 0.7930395406082753,
+    "mean_fold_macro_recall": 0.7928003342054609,
+    "mean_fold_pr_auc": 0.9423783841466458,
+    "pr_auc": 0.9347832676551198,
+    "roc_auc": 0.843313687968772,
+    "stability_score": 0.666699563746183,
+    "std_fold_macro_recall": 0.25220154091855573,
+    "std_fold_pr_auc": 0.07072160578740498,
+    "worst_fold_macro_recall": 0.4683981301934684
+  },
+  "processed_sha256": "2d89f1016f5df5e87b1c3e3789191200620fe1daa6b722328eaafe0f27e78e22",
+  "promotion": {
+    "checks": {
+      "healthy_recall_at_least_0_60": false,
+      "macro_recall_at_least_0_70": true
+    },
+    "passed": false
+  },
+  "seed": 20260803,
+  "started_at": "2026-08-04T02:15:38.359431+00:00"
+}

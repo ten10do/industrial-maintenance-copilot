@@ -30,6 +30,7 @@ from download_paderborn_dataset import (  # noqa: E402
     parse_official_listing,
     verify_official_listing,
 )
+from generate_paderborn_v2_folds import build_manifest as build_v2_folds  # noqa: E402
 from prepare_bearing_dataset import ProcessedRow, write_processed  # noqa: E402
 
 
@@ -47,6 +48,67 @@ def test_paderborn_listing_requires_the_exact_official_archive_set() -> None:
 
     verify_official_listing(parsed)
     assert set(parsed) == set(EXPECTED_BEARINGS)
+
+
+def test_paderborn_v2_fold_manifest_is_deterministic_and_excludes_test(
+    tmp_path: Path,
+) -> None:
+    split = tmp_path / "split.json"
+    split.write_text(
+        json.dumps(
+            {
+                "train": [f"H{index}" for index in range(4)]
+                + [f"A{index}" for index in range(8)],
+                "validation": ["H4", "A8", "A9"],
+                "test": ["T0", "T1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    labels = tmp_path / "labels.csv"
+    with labels.open("w", encoding="utf-8", newline="") as stream:
+        writer = csv.DictWriter(
+            stream,
+            fieldnames=["bearing_id", "fault_class", "damage_origin"],
+        )
+        writer.writeheader()
+        for index in range(5):
+            writer.writerow(
+                {
+                    "bearing_id": f"H{index}",
+                    "fault_class": "healthy",
+                    "damage_origin": "healthy",
+                }
+            )
+        for index in range(10):
+            writer.writerow(
+                {
+                    "bearing_id": f"A{index}",
+                    "fault_class": "inner_ring" if index % 2 else "outer_ring",
+                    "damage_origin": "artificial" if index < 5 else "real",
+                }
+            )
+        for bearing_id in ("T0", "T1"):
+            writer.writerow(
+                {
+                    "bearing_id": bearing_id,
+                    "fault_class": "outer_ring",
+                    "damage_origin": "real",
+                }
+            )
+
+    first = build_v2_folds(split, labels)
+    second = build_v2_folds(split, labels)
+
+    assert first == second
+    validations = [bearing for fold in first["folds"] for bearing in fold["validation"]]
+    assert sorted(validations) == sorted(first["development_bearings"])
+    assert len(validations) == len(set(validations))
+    assert not set(validations) & {"T0", "T1"}
+    assert all(
+        fold["validation_distribution"]["damage_origin"].get("healthy") == 1
+        for fold in first["folds"]
+    )
 
 
 def test_paderborn_download_resumes_to_an_atomic_destination(tmp_path: Path) -> None:
@@ -116,6 +178,29 @@ def test_paderborn_channel_falls_back_to_strict_mat5_reader(
     signal = dataset_preparation._load_paderborn_channel(path, "vibration_1")
 
     np.testing.assert_array_equal(signal, np.asarray([1.0, -2.0, 3.5]))
+
+
+def test_paderborn_fallback_returns_an_early_named_channel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "fixture.mat"
+    channels = np.empty((1, 2), dtype=[("Name", "O"), ("Data", "O")])
+    channels["Name"][0, 0] = "phase_current_1"
+    channels["Data"][0, 0] = np.asarray([0.1, 0.2, 0.3])
+    channels["Name"][0, 1] = "vibration_1"
+    channels["Data"][0, 1] = np.asarray([1.0, 2.0, 3.0])
+    root = np.empty((1, 1), dtype=[("Y", "O")])
+    root["Y"][0, 0] = channels
+    savemat(path, {path.stem: root}, do_compression=False)
+
+    def fail_general_decode(*args: object, **kwargs: object) -> None:
+        raise TypeError("fixture general-reader failure")
+
+    monkeypatch.setattr(dataset_preparation, "loadmat", fail_general_decode)
+
+    signal = dataset_preparation._load_paderborn_channel(path, "phase_current_1")
+
+    np.testing.assert_allclose(signal, np.asarray([0.1, 0.2, 0.3]))
 
 
 def test_paderborn_audit_accepts_complete_traceable_fixture(tmp_path: Path) -> None:

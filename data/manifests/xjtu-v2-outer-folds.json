@@ -1,0 +1,170 @@
+{
+  "amendment": "docs/ml-experiments/v2.1-amendment.md",
+  "dataset": "xjtu-sy",
+  "dataset_version": "xjtu-sy-snapshot-6364ef9cb50663c5",
+  "designed_before_v2_1_rerun": true,
+  "development_bearings": [
+    "Bearing1_1",
+    "Bearing1_2",
+    "Bearing1_3",
+    "Bearing1_4",
+    "Bearing1_5",
+    "Bearing2_1",
+    "Bearing2_2",
+    "Bearing2_3",
+    "Bearing2_4",
+    "Bearing2_5",
+    "Bearing3_1",
+    "Bearing3_2",
+    "Bearing3_3",
+    "Bearing3_4",
+    "Bearing3_5"
+  ],
+  "feature_version": "bearing-features-v2",
+  "fold_count": 5,
+  "folds": [
+    {
+      "fold_id": "fold-1",
+      "train": [
+        "Bearing1_1",
+        "Bearing1_2",
+        "Bearing1_4",
+        "Bearing1_5",
+        "Bearing2_1",
+        "Bearing2_2",
+        "Bearing2_3",
+        "Bearing2_5",
+        "Bearing3_1",
+        "Bearing3_3",
+        "Bearing3_4",
+        "Bearing3_5"
+      ],
+      "validation": [
+        "Bearing1_3",
+        "Bearing2_4",
+        "Bearing3_2"
+      ],
+      "validation_conditions": {
+        "Bearing1_3": "35Hz12kN",
+        "Bearing2_4": "37.5Hz11kN",
+        "Bearing3_2": "40Hz10kN"
+      }
+    },
+    {
+      "fold_id": "fold-2",
+      "train": [
+        "Bearing1_1",
+        "Bearing1_3",
+        "Bearing1_4",
+        "Bearing1_5",
+        "Bearing2_1",
+        "Bearing2_2",
+        "Bearing2_3",
+        "Bearing2_4",
+        "Bearing3_1",
+        "Bearing3_2",
+        "Bearing3_3",
+        "Bearing3_4"
+      ],
+      "validation": [
+        "Bearing1_2",
+        "Bearing2_5",
+        "Bearing3_5"
+      ],
+      "validation_conditions": {
+        "Bearing1_2": "35Hz12kN",
+        "Bearing2_5": "37.5Hz11kN",
+        "Bearing3_5": "40Hz10kN"
+      }
+    },
+    {
+      "fold_id": "fold-3",
+      "train": [
+        "Bearing1_1",
+        "Bearing1_2",
+        "Bearing1_3",
+        "Bearing1_4",
+        "Bearing2_1",
+        "Bearing2_2",
+        "Bearing2_4",
+        "Bearing2_5",
+        "Bearing3_2",
+        "Bearing3_3",
+        "Bearing3_4",
+        "Bearing3_5"
+      ],
+      "validation": [
+        "Bearing1_5",
+        "Bearing2_3",
+        "Bearing3_1"
+      ],
+      "validation_conditions": {
+        "Bearing1_5": "35Hz12kN",
+        "Bearing2_3": "37.5Hz11kN",
+        "Bearing3_1": "40Hz10kN"
+      }
+    },
+    {
+      "fold_id": "fold-4",
+      "train": [
+        "Bearing1_2",
+        "Bearing1_3",
+        "Bearing1_4",
+        "Bearing1_5",
+        "Bearing2_2",
+        "Bearing2_3",
+        "Bearing2_4",
+        "Bearing2_5",
+        "Bearing3_1",
+        "Bearing3_2",
+        "Bearing3_3",
+        "Bearing3_5"
+      ],
+      "validation": [
+        "Bearing1_1",
+        "Bearing2_1",
+        "Bearing3_4"
+      ],
+      "validation_conditions": {
+        "Bearing1_1": "35Hz12kN",
+        "Bearing2_1": "37.5Hz11kN",
+        "Bearing3_4": "40Hz10kN"
+      }
+    },
+    {
+      "fold_id": "fold-5",
+      "train": [
+        "Bearing1_1",
+        "Bearing1_2",
+        "Bearing1_3",
+        "Bearing1_5",
+        "Bearing2_1",
+        "Bearing2_3",
+        "Bearing2_4",
+        "Bearing2_5",
+        "Bearing3_1",
+        "Bearing3_2",
+        "Bearing3_4",
+        "Bearing3_5"
+      ],
+      "validation": [
+        "Bearing1_4",
+        "Bearing2_2",
+        "Bearing3_3"
+      ],
+      "validation_conditions": {
+        "Bearing1_4": "35Hz12kN",
+        "Bearing2_2": "37.5Hz11kN",
+        "Bearing3_3": "40Hz10kN"
+      }
+    }
+  ],
+  "group": "bearing_id",
+  "locked": true,
+  "manifest_version": "xjtu-v2-outer-folds-v1",
+  "processed_config_sha": "af84e57c6a47e3301beabcc505e0d496bff479be3a1ff11125912da0f30cb664",
+  "seed": 20260803,
+  "source_processed_sha256": "c460f848f8f6bda4d7aca9bf333bca6907c68253d7dc5b2db78ace851a982f0a",
+  "strategy": "deterministic condition-balanced five-fold grouped outer CV",
+  "unbiased_final_test": false
+}

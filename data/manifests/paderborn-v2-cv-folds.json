@@ -1,0 +1,280 @@
+{
+  "dataset": "paderborn",
+  "designed_before_v2_training": true,
+  "development_bearings": [
+    "K001",
+    "K002",
+    "K003",
+    "K005",
+    "K006",
+    "KA01",
+    "KA04",
+    "KA05",
+    "KA06",
+    "KA07",
+    "KA08",
+    "KA09",
+    "KA15",
+    "KA16",
+    "KA30",
+    "KB23",
+    "KB24",
+    "KI03",
+    "KI05",
+    "KI07",
+    "KI08",
+    "KI14",
+    "KI16",
+    "KI17",
+    "KI18",
+    "KI21"
+  ],
+  "fold_count": 5,
+  "folds": [
+    {
+      "fold_id": "fold-1",
+      "train": [
+        "K002",
+        "K003",
+        "K005",
+        "K006",
+        "KA01",
+        "KA04",
+        "KA05",
+        "KA06",
+        "KA07",
+        "KA08",
+        "KA15",
+        "KA30",
+        "KB24",
+        "KI03",
+        "KI05",
+        "KI07",
+        "KI14",
+        "KI16",
+        "KI18",
+        "KI21"
+      ],
+      "validation": [
+        "K001",
+        "KA09",
+        "KA16",
+        "KB23",
+        "KI08",
+        "KI17"
+      ],
+      "validation_distribution": {
+        "damage_origin": {
+          "artificial": 2,
+          "healthy": 1,
+          "real": 3
+        },
+        "fault_class": {
+          "combined_inner_outer": 1,
+          "healthy": 1,
+          "inner_ring": 2,
+          "outer_ring": 2
+        }
+      }
+    },
+    {
+      "fold_id": "fold-2",
+      "train": [
+        "K001",
+        "K002",
+        "K005",
+        "K006",
+        "KA01",
+        "KA04",
+        "KA05",
+        "KA07",
+        "KA08",
+        "KA09",
+        "KA15",
+        "KA16",
+        "KA30",
+        "KB23",
+        "KI03",
+        "KI05",
+        "KI08",
+        "KI14",
+        "KI17",
+        "KI18",
+        "KI21"
+      ],
+      "validation": [
+        "K003",
+        "KA06",
+        "KB24",
+        "KI07",
+        "KI16"
+      ],
+      "validation_distribution": {
+        "damage_origin": {
+          "artificial": 2,
+          "healthy": 1,
+          "real": 2
+        },
+        "fault_class": {
+          "combined_inner_outer": 1,
+          "healthy": 1,
+          "inner_ring": 2,
+          "outer_ring": 1
+        }
+      }
+    },
+    {
+      "fold_id": "fold-3",
+      "train": [
+        "K001",
+        "K003",
+        "K005",
+        "K006",
+        "KA01",
+        "KA05",
+        "KA06",
+        "KA07",
+        "KA09",
+        "KA15",
+        "KA16",
+        "KA30",
+        "KB23",
+        "KB24",
+        "KI05",
+        "KI07",
+        "KI08",
+        "KI14",
+        "KI16",
+        "KI17",
+        "KI18"
+      ],
+      "validation": [
+        "K002",
+        "KA04",
+        "KA08",
+        "KI03",
+        "KI21"
+      ],
+      "validation_distribution": {
+        "damage_origin": {
+          "artificial": 2,
+          "healthy": 1,
+          "real": 2
+        },
+        "fault_class": {
+          "healthy": 1,
+          "inner_ring": 2,
+          "outer_ring": 2
+        }
+      }
+    },
+    {
+      "fold_id": "fold-4",
+      "train": [
+        "K001",
+        "K002",
+        "K003",
+        "K006",
+        "KA01",
+        "KA04",
+        "KA06",
+        "KA07",
+        "KA08",
+        "KA09",
+        "KA16",
+        "KA30",
+        "KB23",
+        "KB24",
+        "KI03",
+        "KI07",
+        "KI08",
+        "KI14",
+        "KI16",
+        "KI17",
+        "KI21"
+      ],
+      "validation": [
+        "K005",
+        "KA05",
+        "KA15",
+        "KI05",
+        "KI18"
+      ],
+      "validation_distribution": {
+        "damage_origin": {
+          "artificial": 2,
+          "healthy": 1,
+          "real": 2
+        },
+        "fault_class": {
+          "healthy": 1,
+          "inner_ring": 2,
+          "outer_ring": 2
+        }
+      }
+    },
+    {
+      "fold_id": "fold-5",
+      "train": [
+        "K001",
+        "K002",
+        "K003",
+        "K005",
+        "KA04",
+        "KA05",
+        "KA06",
+        "KA08",
+        "KA09",
+        "KA15",
+        "KA16",
+        "KB23",
+        "KB24",
+        "KI03",
+        "KI05",
+        "KI07",
+        "KI08",
+        "KI16",
+        "KI17",
+        "KI18",
+        "KI21"
+      ],
+      "validation": [
+        "K006",
+        "KA01",
+        "KA07",
+        "KA30",
+        "KI14"
+      ],
+      "validation_distribution": {
+        "damage_origin": {
+          "artificial": 2,
+          "healthy": 1,
+          "real": 2
+        },
+        "fault_class": {
+          "healthy": 1,
+          "inner_ring": 1,
+          "outer_ring": 3
+        }
+      }
+    }
+  ],
+  "frozen_test_accessed": false,
+  "frozen_test_bearings": [
+    "K004",
+    "KA03",
+    "KA22",
+    "KB27",
+    "KI01",
+    "KI04"
+  ],
+  "group": "bearing_id",
+  "locked": true,
+  "manifest_version": "paderborn-v2-cv-folds-v1",
+  "seed": 20260803,
+  "source_labels": "data/schemas/paderborn_labels.csv",
+  "source_labels_sha256": "951e40dedd2dd6536fe6ff86151ddc2c1011f893de1871dcbe06aa77bb30d1d7",
+  "source_split": "data/manifests/paderborn-split-v1.json",
+  "source_split_sha256": "10a30ce5392fba977a81113004413ce4ec1c0a8327f6be254b72f7a65de015fd",
+  "strategy": "deterministic grouped stratification by damage_origin and fault_class"
+}

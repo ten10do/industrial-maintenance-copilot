@@ -1,0 +1,522 @@
+"""Predictive V2 feature and governance tests use only synthetic fixtures."""
+
+from __future__ import annotations
+
+import json
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
+import pytest
+from sklearn.ensemble import RandomForestClassifier
+
+from app.api.v1.endpoints.ml import _extract_online_features
+from app.ml.artifacts import LoadedArtifact
+from app.ml.features import FEATURE_SCHEMA_VERSION
+from app.ml.inference import predict
+from app.ml.types import FeatureVector
+from app.ml.v2_features import (
+    FEATURE_SCHEMA_VERSION_V2,
+    ConditionBaseline,
+    FoldLocalDegradationIndicator,
+    causal_multiscale_context,
+    extract_dual_channel_features,
+    extract_envelope_features,
+)
+from app.ml.v2_governance import (
+    ExperimentRun,
+    PaderbornAccessPolicy,
+    causal_ewma,
+    fault_promotion,
+    hierarchical_fault_targets,
+    rul_promotion,
+    trajectory_metrics,
+)
+from app.ml.v2_research import (
+    PaderbornFaultV2Preprocessor,
+    V2Dataset,
+    fault_fold_matrices,
+    grouped_condition_folds,
+)
+from app.schemas.ml import OnlineInferenceIn
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
+
+from generate_paderborn_v2_folds import (  # noqa: E402
+    build_manifest as build_paderborn_folds,
+)
+from generate_xjtu_v2_folds import build_manifest as build_xjtu_folds  # noqa: E402
+from prepare_bearing_v2 import prepare_xjtu_bearing  # noqa: E402
+from run_fault_v2 import (  # noqa: E402
+    _binary_metrics as fault_binary_metrics,
+)
+from run_fault_v2 import (  # noqa: E402
+    _candidates as fault_candidates,
+)
+from run_fault_v2 import (  # noqa: E402
+    _local_fault_contributors,
+)
+from run_rul_v2 import _candidates as rul_candidates  # noqa: E402
+
+
+def test_v1_and_v2_feature_schema_are_isolated() -> None:
+    assert FEATURE_SCHEMA_VERSION == "bearing-features-v1"
+    assert FEATURE_SCHEMA_VERSION_V2 == "bearing-features-v2"
+    assert FEATURE_SCHEMA_VERSION != FEATURE_SCHEMA_VERSION_V2
+
+
+def test_envelope_features_are_finite_and_respond_to_impulses() -> None:
+    normal = np.sin(np.linspace(0, 16 * np.pi, 1024))
+    impulsive = normal.copy()
+    impulsive[::64] += 5.0
+
+    normal_features = extract_envelope_features(normal, 25_600)
+    impulsive_features = extract_envelope_features(impulsive, 25_600)
+
+    assert set(normal_features) == set(impulsive_features)
+    assert all(np.isfinite(list(impulsive_features.values())))
+    assert impulsive_features["envelope_peak"] > normal_features["envelope_peak"]
+
+
+def test_dual_channel_features_include_real_cross_channel_statistics() -> None:
+    horizontal = np.sin(np.linspace(0, 20 * np.pi, 512))
+    vertical = horizontal * 2.0
+
+    features = extract_dual_channel_features(horizontal, vertical, 25_600)
+
+    assert features["cross_channel_correlation"] == pytest.approx(1.0)
+    assert features["cross_rms_ratio_first_over_second"] == pytest.approx(0.5)
+    assert "horizontal_envelope_kurtosis" in features
+    assert "vertical_spectral_entropy" in features
+
+    current = extract_dual_channel_features(
+        horizontal,
+        vertical,
+        25_600,
+        first_name="phase_current_1",
+        second_name="phase_current_2",
+        cross_prefix="current_cross",
+    )
+    assert "phase_current_1_rms" in current
+    assert current["current_cross_channel_correlation"] == pytest.approx(1.0)
+
+
+def test_condition_baseline_uses_only_rows_passed_to_fit() -> None:
+    train = [
+        {"rms": 1.0, "kurtosis": 3.0},
+        {"rms": 2.0, "kurtosis": 4.0},
+        {"rms": 20.0, "kurtosis": 10.0},
+    ]
+    baseline = ConditionBaseline.fit(
+        train,
+        ["A", "A", "A"],
+        [False, False, True],
+        feature_names=("rms", "kurtosis"),
+    )
+
+    before = baseline.transform([{"rms": 3.0, "kurtosis": 5.0}], ["A"])
+    validation_outlier = {"rms": 1_000_000.0, "kurtosis": 1_000_000.0}
+    after = baseline.transform([validation_outlier], ["A"])
+
+    assert before[0]["condition_normalized_rms"] == pytest.approx(3.0)
+    assert after[0]["condition_normalized_rms"] > 1_000_000
+    assert baseline.pooled["rms"] == pytest.approx((1.5, 0.5))
+
+
+def test_final_fault_preprocessor_matches_fold_local_training_transform() -> None:
+    names = (
+        "rms",
+        "kurtosis",
+        "crest_factor",
+        "spectral_centroid_hz",
+        "low_band_energy",
+        "mid_band_energy",
+        "high_band_energy",
+        "low_energy_ratio",
+        "mid_energy_ratio",
+        "high_energy_ratio",
+        "envelope_rms",
+    )
+    features = np.arange(8 * len(names), dtype=np.float64).reshape(8, len(names))
+    dataset = V2Dataset(
+        features=features,
+        targets=np.asarray(["healthy", "fault"] * 4),
+        groups=np.asarray([f"B{index}" for index in range(8)]),
+        conditions=np.asarray(["A"] * 4 + ["B"] * 4),
+        sequence_indices=np.arange(8, dtype=np.int64),
+        feature_names=names,
+        dataset_name="paderborn",
+        dataset_version="fixture-v1",
+        config_sha="a" * 64,
+        processed_sha256="b" * 64,
+    )
+    train_indices = np.asarray([0, 1, 2, 3, 4, 5])
+    validation_indices = np.asarray([6, 7])
+    damaged = np.asarray([0, 1, 0, 1, 0, 1, 0, 1])
+    train, validation, output_names = fault_fold_matrices(
+        dataset, "F3", train_indices, validation_indices, damaged
+    )
+    mean = np.mean(train, axis=0)
+    scale = np.std(train, axis=0)
+    scale[scale == 0] = 1.0
+
+    preprocessor = PaderbornFaultV2Preprocessor.fit(
+        dataset, "F3", train_indices, damaged
+    )
+
+    np.testing.assert_allclose(
+        preprocessor.transform(dataset, train_indices), (train - mean) / scale
+    )
+    np.testing.assert_allclose(
+        preprocessor.transform(dataset, validation_indices),
+        (validation - mean) / scale,
+    )
+    assert preprocessor.output_feature_names == output_names
+    transformed_value = preprocessor.transform_values(
+        {
+            name: float(dataset.features[validation_indices[0], index])
+            for index, name in enumerate(dataset.feature_names)
+        },
+        "B",
+    )
+    np.testing.assert_allclose(
+        transformed_value,
+        preprocessor.transform(dataset, validation_indices[:1]),
+    )
+
+
+def test_v2_fault_inference_uses_damage_probability_and_honest_attribution() -> None:
+    names = (
+        "rms",
+        "kurtosis",
+        "crest_factor",
+        "spectral_centroid_hz",
+        "low_band_energy",
+        "mid_band_energy",
+        "high_band_energy",
+        "low_energy_ratio",
+        "mid_energy_ratio",
+        "high_energy_ratio",
+        "envelope_rms",
+    )
+    features = np.arange(8 * len(names), dtype=np.float64).reshape(8, len(names))
+    dataset = V2Dataset(
+        features=features,
+        targets=np.asarray(["healthy", "fault"] * 4),
+        groups=np.asarray([f"B{index}" for index in range(8)]),
+        conditions=np.asarray(["A"] * 4 + ["B"] * 4),
+        sequence_indices=np.arange(8, dtype=np.int64),
+        feature_names=names,
+        dataset_name="paderborn",
+        dataset_version="fixture-v1",
+        config_sha="a" * 64,
+        processed_sha256="b" * 64,
+    )
+    indices = np.arange(8, dtype=np.int_)
+    damaged = np.asarray([0, 1, 0, 1, 0, 1, 0, 1])
+    preprocessor = PaderbornFaultV2Preprocessor.fit(dataset, "F3", indices, damaged)
+    model = RandomForestClassifier(n_estimators=5, random_state=1).fit(
+        preprocessor.transform(dataset, indices), damaged
+    )
+    artifact = LoadedArtifact(
+        model=model,
+        preprocessor=preprocessor,
+        feature_names=preprocessor.output_feature_names,
+        metadata={
+            "task_type": "fault_classification",
+            "model_version": "fixture-v2",
+            "feature_schema_version": FEATURE_SCHEMA_VERSION_V2,
+        },
+        metrics={},
+    )
+    vector = FeatureVector(
+        bearing_id="B7",
+        window_started_at=datetime.now(UTC),
+        window_ended_at=datetime.now(UTC) + timedelta(seconds=1),
+        schema_version=FEATURE_SCHEMA_VERSION_V2,
+        values={name: float(features[7, index]) for index, name in enumerate(names)},
+        operating_condition="B",
+    )
+
+    result = predict(artifact, vector)
+
+    assert result.prediction in {"healthy", "damaged"}
+    assert result.probability == result.probabilities["damaged"]
+    assert result.top_features == ()
+
+
+def test_online_v2_feature_gateway_requires_verified_current_channels() -> None:
+    now = datetime.now(UTC)
+    vibration = np.sin(np.linspace(0, 16 * np.pi, 128)).tolist()
+    current_1 = np.cos(np.linspace(0, 16 * np.pi, 128)).tolist()
+    current_2 = np.sin(np.linspace(0, 8 * np.pi, 128)).tolist()
+    payload = OnlineInferenceIn(
+        equipment_id=1,
+        bearing_id="B1",
+        task_type="fault_classification",
+        model_version_id=1,
+        signal=vibration,
+        channels={"phase_current_1": current_1, "phase_current_2": current_2},
+        sampling_rate_hz=64_000,
+        started_at=now,
+        ended_at=now + timedelta(seconds=128 / 64_000),
+        operating_condition="N15_M07_F10",
+        context={"speed_rpm": 1500.0, "load_torque_nm": 0.7},
+    )
+
+    vector = _extract_online_features(payload, FEATURE_SCHEMA_VERSION_V2)
+
+    assert vector.schema_version == FEATURE_SCHEMA_VERSION_V2
+    assert "phase_current_1_rms" in vector.values
+    assert "current_cross_channel_correlation" in vector.values
+    with pytest.raises(ValueError, match="channels missing"):
+        _extract_online_features(
+            payload.model_copy(update={"channels": {}}), FEATURE_SCHEMA_VERSION_V2
+        )
+
+
+def test_causal_multiscale_context_cannot_see_future_values() -> None:
+    prefix = [{"horizontal_rms": float(index)} for index in range(20)]
+    original = causal_multiscale_context(prefix)
+    extended = causal_multiscale_context([*prefix, {"horizontal_rms": 1_000_000.0}])
+
+    assert original == extended[:-1]
+    assert original[5]["horizontal_rms_causal_5m_mean"] == pytest.approx(2.5)
+    assert all("center" not in key for row in original for key in row)
+
+
+def test_fold_local_degradation_fit_does_not_use_validation() -> None:
+    train = [
+        {"horizontal_rms": float(index + 1), "vertical_rms": float(index + 2)}
+        for index in range(10)
+    ]
+    indicator = FoldLocalDegradationIndicator.fit(train, ["A"] * 10, list(range(10)))
+    validation = [{"horizontal_rms": 100.0, "vertical_rms": 200.0}]
+
+    distance = indicator.transform(validation)
+
+    assert distance.shape == (1,)
+    assert distance[0] > 10
+    assert indicator.median[0] == pytest.approx(3.0)
+
+
+def test_frozen_test_policy_denies_access(tmp_path: Path) -> None:
+    manifest = tmp_path / "folds.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "locked": True,
+                "frozen_test_accessed": False,
+                "development_bearings": ["D1", "D2"],
+                "frozen_test_bearings": ["T1"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    policy = PaderbornAccessPolicy.from_manifest(manifest)
+
+    policy.require_development("D1")
+    with pytest.raises(PermissionError, match="frozen Paderborn test access denied"):
+        policy.require_development("T1")
+    with pytest.raises(ValueError, match="incomplete"):
+        policy.validate_development_groups(["D1"])
+
+
+def test_hierarchical_classifier_eligibility_uses_official_subtype_counts() -> None:
+    stage_one, eligible = hierarchical_fault_targets(
+        ["healthy", "outer_ring", "inner_ring"],
+        ["none", "outer", "inner"],
+    )
+
+    np.testing.assert_array_equal(stage_one, [0, 1, 1])
+    assert eligible is False
+
+
+def test_rul_trajectory_reports_raw_and_causal_smoothed_oscillation() -> None:
+    raw = np.asarray([10.0, 9.0, 10.0, 8.0, 8.2])
+    smoothed = causal_ewma(raw)
+    raw_metrics = trajectory_metrics({"B1": raw})
+    smoothed_metrics = trajectory_metrics({"B1": smoothed})
+
+    assert raw_metrics["oscillation_count"] == 1
+    assert raw_metrics["max_positive_jump"] == pytest.approx(1.0)
+    assert smoothed[0] == raw[0]
+    assert smoothed_metrics["oscillation_count"] <= raw_metrics["oscillation_count"]
+
+
+def test_v2_promotion_policies_do_not_lower_safety_thresholds() -> None:
+    assert fault_promotion({"macro_recall": 0.70, "healthy_recall": 0.60})["passed"]
+    assert not fault_promotion({"macro_recall": 0.699, "healthy_recall": 1.0})["passed"]
+    passing_rul = {
+        "mae": 5.0,
+        "r2": 0.01,
+        "late_prediction_error": 3.0,
+        "mean_per_bearing_oscillation_rate": 0.10,
+    }
+    assert rul_promotion(passing_rul)["passed"]
+    assert not rul_promotion({**passing_rul, "r2": 0.0})["passed"]
+
+
+def test_fault_metrics_preserve_per_class_recall() -> None:
+    metrics = fault_binary_metrics(
+        np.asarray([0, 0, 1, 1]), np.asarray([0.1, 0.8, 0.7, 0.9])
+    )
+
+    assert metrics["healthy_recall"] == pytest.approx(0.5)
+    assert metrics["damaged_recall"] == pytest.approx(1.0)
+    assert metrics["false_positive_rate"] == pytest.approx(0.5)
+    assert metrics["false_negative_rate"] == pytest.approx(0.0)
+
+
+def test_fault_local_attribution_is_honest_about_model_support() -> None:
+    linear = SimpleNamespace(coef_=np.asarray([[2.0, -1.0]]))
+    available = _local_fault_contributors(
+        linear, np.asarray([3.0, 4.0]), ("rms", "kurtosis"), "fold-1"
+    )
+    unavailable = _local_fault_contributors(
+        SimpleNamespace(), np.asarray([3.0]), ("rms",), "fold-1"
+    )
+
+    assert available["top_contributors"][0]["feature"] == "rms"
+    assert unavailable["status"] == "unavailable"
+
+
+def test_experiment_run_requires_completion_and_records_artifact_hash(
+    tmp_path: Path,
+) -> None:
+    run = ExperimentRun(
+        experiment_id="fixture",
+        dataset_version="dataset-v1",
+        feature_version=FEATURE_SCHEMA_VERSION_V2,
+        fold_manifest="folds.json",
+        algorithm="ridge",
+        hyperparameters={"alpha": 1.0},
+        seed=20260803,
+        git_sha="a" * 40,
+    )
+    output = tmp_path / "run.json"
+    with pytest.raises(ValueError, match="unfinished"):
+        run.write(output)
+    artifact = tmp_path / "artifact.bin"
+    artifact.write_bytes(b"fixture")
+
+    run.finish({"mae": 1.0}, artifact_path=artifact)
+    run.write(output)
+
+    recorded = json.loads(output.read_text(encoding="utf-8"))
+    assert recorded["metrics"] == {"mae": 1.0}
+    assert len(recorded["artifact_hash"]) == 64
+
+
+def test_xjtu_v2_preparation_uses_both_channels_and_causal_history(
+    tmp_path: Path,
+) -> None:
+    bearing_dir = tmp_path / "35Hz12kN" / "Bearing1_1"
+    bearing_dir.mkdir(parents=True)
+    for index in range(1, 8):
+        horizontal = np.sin(np.linspace(0, 8 * np.pi, 128)) * index
+        vertical = np.cos(np.linspace(0, 8 * np.pi, 128)) * (index + 1)
+        matrix = np.column_stack([horizontal, vertical])
+        np.savetxt(bearing_dir / f"{index}.csv", matrix, delimiter=",")
+
+    rows = prepare_xjtu_bearing(tmp_path, bearing_dir)
+
+    assert len(rows) == 7
+    assert rows[0].target == pytest.approx(0.1)
+    assert rows[-1].target == 0.0
+    assert "horizontal_rms" in rows[0].values
+    assert "vertical_rms" in rows[0].values
+    assert "cross_channel_correlation" in rows[0].values
+    assert "horizontal_rms_causal_5m_mean" in rows[0].values
+    assert (
+        rows[0].values["horizontal_rms_causal_5m_mean"]
+        == rows[0].values["horizontal_rms"]
+    )
+
+
+def test_grouped_condition_folds_are_deterministic_and_group_safe() -> None:
+    groups = np.asarray([f"B{index}" for index in range(9) for _ in range(2)])
+    conditions = np.asarray([f"C{index // 3}" for index in range(9) for _ in range(2)])
+
+    first = grouped_condition_folds(groups, conditions)
+    second = grouped_condition_folds(groups, conditions)
+
+    for (train, validation), duplicate in zip(first, second, strict=True):
+        np.testing.assert_array_equal(train, duplicate[0])
+        np.testing.assert_array_equal(validation, duplicate[1])
+        assert not set(groups[train]) & set(groups[validation])
+        assert set(conditions[validation]) == {"C0", "C1", "C2"}
+
+
+def test_paderborn_grouped_manifest_is_reproducible_and_keeps_test_frozen() -> None:
+    split = REPOSITORY_ROOT / "data/manifests/paderborn-split-v1.json"
+    labels = REPOSITORY_ROOT / "data/schemas/paderborn_labels.csv"
+
+    first = build_paderborn_folds(split, labels)
+    second = build_paderborn_folds(split, labels)
+
+    assert first == second
+    frozen = set(first["frozen_test_bearings"])
+    validation = [bearing for fold in first["folds"] for bearing in fold["validation"]]
+    assert len(validation) == len(set(validation)) == 26
+    assert not frozen & set(validation)
+    assert all(
+        {"healthy", "artificial", "real"}
+        <= set(fold["validation_distribution"]["damage_origin"])
+        for fold in first["folds"]
+    )
+
+
+def test_v2_candidate_grids_match_preregistration() -> None:
+    fault = fault_candidates()
+    rul = rul_candidates()
+
+    assert len(fault) == 10
+    assert {candidate.algorithm for candidate in fault} == {
+        "logistic_regression",
+        "random_forest",
+        "hist_gradient_boosting",
+    }
+    assert len(rul) == 10
+    assert {candidate.algorithm for candidate in rul} == {
+        "ridge",
+        "random_forest",
+        "extra_trees",
+        "gradient_boosting",
+        "hist_gradient_boosting",
+    }
+
+
+def test_xjtu_v2_outer_manifest_is_deterministic_and_condition_balanced(
+    tmp_path: Path,
+) -> None:
+    processed = tmp_path / "xjtu.npz"
+    groups = np.asarray(
+        [f"B{condition}{bearing}" for condition in range(3) for bearing in range(5)]
+    )
+    conditions = np.asarray(
+        [f"C{condition}" for condition in range(3) for _ in range(5)]
+    )
+    np.savez_compressed(
+        processed,
+        groups=groups,
+        conditions=conditions,
+        dataset_name=np.asarray("xjtu-sy"),
+        dataset_version=np.asarray("fixture-v1"),
+        feature_schema_version=np.asarray("bearing-features-v2"),
+        config_sha=np.asarray("a" * 64),
+    )
+
+    first = build_xjtu_folds(processed)
+    second = build_xjtu_folds(processed)
+
+    assert first == second
+    validation = [group for fold in first["folds"] for group in fold["validation"]]
+    assert sorted(validation) == sorted(groups.tolist())
+    assert len(validation) == len(set(validation))
+    assert all(
+        len(set(fold["validation_conditions"].values())) == 3 for fold in first["folds"]
+    )

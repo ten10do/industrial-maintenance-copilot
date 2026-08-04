@@ -1,0 +1,515 @@
+{
+  "bearing_characteristic_frequencies": {
+    "reason": "official bearing geometry is not available in the locked inputs",
+    "status": "disabled"
+  },
+  "bearing_count": 26,
+  "bearing_specific_medians": {
+    "K001": {
+      "crest_factor": 8.207273340969174,
+      "high_band_energy": 354658.24489948375,
+      "kurtosis": 14.766412336870946,
+      "low_band_energy": 576193.4899176757,
+      "mid_band_energy": 354605.1662135261,
+      "rms": 0.38986711883475944,
+      "spectral_centroid_hz": 14199.157508108172
+    },
+    "K002": {
+      "crest_factor": 10.066287998956646,
+      "high_band_energy": 70666.11813860628,
+      "kurtosis": 16.84351649106191,
+      "low_band_energy": 267370.47104508494,
+      "mid_band_energy": 72821.6839414989,
+      "rms": 0.21992595083565766,
+      "spectral_centroid_hz": 10388.51862608562
+    },
+    "K003": {
+      "crest_factor": 8.618194582310608,
+      "high_band_energy": 300433.16386935394,
+      "kurtosis": 16.455481061787104,
+      "low_band_energy": 437010.22317015345,
+      "mid_band_energy": 300372.4453013977,
+      "rms": 0.3507158496135169,
+      "spectral_centroid_hz": 14456.575277119384
+    },
+    "K005": {
+      "crest_factor": 5.902591191307744,
+      "high_band_energy": 23605.09510132559,
+      "kurtosis": 4.595014855152397,
+      "low_band_energy": 247359.43480250073,
+      "mid_band_energy": 24469.994096151397,
+      "rms": 0.1915300778215824,
+      "spectral_centroid_hz": 7759.659530700211
+    },
+    "K006": {
+      "crest_factor": 8.229570548232624,
+      "high_band_energy": 333906.8284647966,
+      "kurtosis": 15.121149424387534,
+      "low_band_energy": 521784.25370676816,
+      "mid_band_energy": 338899.72399326507,
+      "rms": 0.37646492322047875,
+      "spectral_centroid_hz": 14344.567822046192
+    },
+    "KA01": {
+      "crest_factor": 7.370082741699785,
+      "high_band_energy": 29366.0842469051,
+      "kurtosis": 15.14559783231468,
+      "low_band_energy": 2228135.253186484,
+      "mid_band_energy": 38572.89094338859,
+      "rms": 0.5245729525462342,
+      "spectral_centroid_hz": 5514.8137781986015
+    },
+    "KA04": {
+      "crest_factor": 5.616935231808631,
+      "high_band_energy": 10052.761120288644,
+      "kurtosis": 6.171481550072872,
+      "low_band_energy": 1728248.9664868452,
+      "mid_band_energy": 18888.98308894605,
+      "rms": 0.4600229856735775,
+      "spectral_centroid_hz": 4839.477702884061
+    },
+    "KA05": {
+      "crest_factor": 7.4814209786992665,
+      "high_band_energy": 56755.26500856179,
+      "kurtosis": 6.890074614226426,
+      "low_band_energy": 440210.2814840084,
+      "mid_band_energy": 57373.23575358886,
+      "rms": 0.2577941829067678,
+      "spectral_centroid_hz": 8389.268532406215
+    },
+    "KA06": {
+      "crest_factor": 8.454608814274149,
+      "high_band_energy": 70352.20294354578,
+      "kurtosis": 10.248860600694565,
+      "low_band_energy": 365956.35293906345,
+      "mid_band_energy": 77872.43749664916,
+      "rms": 0.2479246420594341,
+      "spectral_centroid_hz": 10075.599658989879
+    },
+    "KA07": {
+      "crest_factor": 8.512038940171145,
+      "high_band_energy": 49404.690511060915,
+      "kurtosis": 9.844775039441323,
+      "low_band_energy": 251709.25933117775,
+      "mid_band_energy": 50624.768091751284,
+      "rms": 0.20684788922728153,
+      "spectral_centroid_hz": 9574.929461352413
+    },
+    "KA08": {
+      "crest_factor": 8.254070136017184,
+      "high_band_energy": 54124.42288551982,
+      "kurtosis": 8.974797147916007,
+      "low_band_energy": 286291.9530402351,
+      "mid_band_energy": 55812.872582455646,
+      "rms": 0.2187593089831828,
+      "spectral_centroid_hz": 9539.06544072131
+    },
+    "KA09": {
+      "crest_factor": 7.97052103134482,
+      "high_band_energy": 55501.02738519906,
+      "kurtosis": 8.241525983498242,
+      "low_band_energy": 342488.6216481582,
+      "mid_band_energy": 57010.32796924848,
+      "rms": 0.23199932095216003,
+      "spectral_centroid_hz": 8795.519286660916
+    },
+    "KA15": {
+      "crest_factor": 5.492581406452192,
+      "high_band_energy": 21383.320956406216,
+      "kurtosis": 4.272311263185102,
+      "low_band_energy": 300625.5533894385,
+      "mid_band_energy": 23826.66510014254,
+      "rms": 0.20822818614828106,
+      "spectral_centroid_hz": 7634.333165538071
+    },
+    "KA16": {
+      "crest_factor": 5.310520263452943,
+      "high_band_energy": 17181.8506188846,
+      "kurtosis": 5.54204983958937,
+      "low_band_energy": 2393090.3756179614,
+      "mid_band_energy": 32215.37428614125,
+      "rms": 0.5409279411521,
+      "spectral_centroid_hz": 4930.050789863831
+    },
+    "KA30": {
+      "crest_factor": 7.115340711508342,
+      "high_band_energy": 74775.30531616247,
+      "kurtosis": 6.229353956288947,
+      "low_band_energy": 797461.7064800183,
+      "mid_band_energy": 78321.66255322858,
+      "rms": 0.336627896721463,
+      "spectral_centroid_hz": 7569.450181778355
+    },
+    "KB23": {
+      "crest_factor": 5.874975975663696,
+      "high_band_energy": 75577.4956958984,
+      "kurtosis": 5.795742191400028,
+      "low_band_energy": 2561264.029018293,
+      "mid_band_energy": 90509.62715432825,
+      "rms": 0.5719574394876683,
+      "spectral_centroid_hz": 5685.142104086799
+    },
+    "KB24": {
+      "crest_factor": 6.313346091350547,
+      "high_band_energy": 315912.2910899662,
+      "kurtosis": 7.969302907978609,
+      "low_band_energy": 5645953.967576368,
+      "mid_band_energy": 351009.9376535645,
+      "rms": 0.8697469056083692,
+      "spectral_centroid_hz": 6069.341468401747
+    },
+    "KI03": {
+      "crest_factor": 4.904012921199442,
+      "high_band_energy": 10217.023399582526,
+      "kurtosis": 3.5062240451528743,
+      "low_band_energy": 310830.7703374424,
+      "mid_band_energy": 15732.030877607456,
+      "rms": 0.205144190229246,
+      "spectral_centroid_hz": 6877.519917709533
+    },
+    "KI05": {
+      "crest_factor": 10.182461560910518,
+      "high_band_energy": 73206.34223782647,
+      "kurtosis": 17.691672166114657,
+      "low_band_energy": 269447.50888858945,
+      "mid_band_energy": 74818.41668827154,
+      "rms": 0.22280928895359267,
+      "spectral_centroid_hz": 10685.88941371365
+    },
+    "KI07": {
+      "crest_factor": 8.987484233624684,
+      "high_band_energy": 69846.37516730356,
+      "kurtosis": 11.474473321327,
+      "low_band_energy": 389642.09867388505,
+      "mid_band_energy": 71944.11183560634,
+      "rms": 0.25245733423023486,
+      "spectral_centroid_hz": 9556.817133007164
+    },
+    "KI08": {
+      "crest_factor": 7.802077598530073,
+      "high_band_energy": 70356.78251172317,
+      "kurtosis": 7.554601978615682,
+      "low_band_energy": 591984.9275912887,
+      "mid_band_energy": 71185.15190152719,
+      "rms": 0.2952384540147716,
+      "spectral_centroid_hz": 7851.771518608849
+    },
+    "KI14": {
+      "crest_factor": 5.2716308736463775,
+      "high_band_energy": 19748.652085656708,
+      "kurtosis": 3.9190411946152337,
+      "low_band_energy": 345140.8574168703,
+      "mid_band_energy": 21272.027926354633,
+      "rms": 0.21875535411306352,
+      "spectral_centroid_hz": 7608.923613208431
+    },
+    "KI16": {
+      "crest_factor": 5.993042139269992,
+      "high_band_energy": 26162.389867333783,
+      "kurtosis": 5.485532676469468,
+      "low_band_energy": 1056200.0769770937,
+      "mid_band_energy": 32103.177959913082,
+      "rms": 0.36723145558159004,
+      "spectral_centroid_hz": 5594.097966389701
+    },
+    "KI17": {
+      "crest_factor": 5.099699002715166,
+      "high_band_energy": 14724.446526007032,
+      "kurtosis": 4.141429367998815,
+      "low_band_energy": 506063.4348023293,
+      "mid_band_energy": 15945.170036870673,
+      "rms": 0.2561260140534524,
+      "spectral_centroid_hz": 5401.374350001159
+    },
+    "KI18": {
+      "crest_factor": 6.908737491213981,
+      "high_band_energy": 25648.992609176286,
+      "kurtosis": 9.038832368161382,
+      "low_band_energy": 1021184.8336379833,
+      "mid_band_energy": 32524.749690959066,
+      "rms": 0.36098586259839505,
+      "spectral_centroid_hz": 6490.427578761095
+    },
+    "KI21": {
+      "crest_factor": 4.901363251032476,
+      "high_band_energy": 22952.094607016217,
+      "kurtosis": 3.6595545606227944,
+      "low_band_energy": 532178.2381802199,
+      "mid_band_energy": 24489.618062667054,
+      "rms": 0.26665670344749864,
+      "spectral_centroid_hz": 6874.449302070646
+    }
+  },
+  "channel_audit": {
+    "channel_coverage": {
+      "force": 104,
+      "phase_current_1": 104,
+      "phase_current_2": 104,
+      "speed": 104,
+      "temp_2_bearing_module": 104,
+      "torque": 104,
+      "vibration_1": 104
+    },
+    "f4_channels": [
+      "vibration_1",
+      "phase_current_1",
+      "phase_current_2"
+    ],
+    "f4_status": "applicable",
+    "high_rate_channels_aligned": 104,
+    "representative_files": 104
+  },
+  "condition_specific_medians": {
+    "N09_M07_F10": {
+      "crest_factor": 8.742180838738621,
+      "high_band_energy": 50203.39471935175,
+      "kurtosis": 16.54660021713902,
+      "low_band_energy": 130166.06471774614,
+      "mid_band_energy": 50615.03059321718,
+      "rms": 0.17332100928928018,
+      "spectral_centroid_hz": 12279.357675304966
+    },
+    "N15_M01_F10": {
+      "crest_factor": 6.66778957516211,
+      "high_band_energy": 49048.12396461413,
+      "kurtosis": 6.742397561056503,
+      "low_band_energy": 512377.18811094196,
+      "mid_band_energy": 51316.059990427704,
+      "rms": 0.28466949890445703,
+      "spectral_centroid_hz": 7199.777780394471
+    },
+    "N15_M07_F04": {
+      "crest_factor": 6.766023850773338,
+      "high_band_energy": 51457.58486153933,
+      "kurtosis": 6.693777928673883,
+      "low_band_energy": 456081.8134783599,
+      "mid_band_energy": 57479.254607350565,
+      "rms": 0.26469312240308057,
+      "spectral_centroid_hz": 8048.7617080950295
+    },
+    "N15_M07_F10": {
+      "crest_factor": 6.608282742516106,
+      "high_band_energy": 51091.61511131725,
+      "kurtosis": 6.4024844582289715,
+      "low_band_energy": 521634.23916991195,
+      "mid_band_energy": 53180.69989673298,
+      "rms": 0.2865018476658574,
+      "spectral_centroid_hz": 7256.376572332283
+    }
+  },
+  "config_sha": "4f9a0aed0603ed1ce4bdcdabb73adb9e734ebf8e65fa13a8e481317be440b654",
+  "dataset_version": "paderborn-snapshot-e513a6320d755ce5",
+  "distributions": {
+    "bearing_damage_origin": {
+      "artificial": 10,
+      "healthy": 5,
+      "real": 11
+    },
+    "bearing_fault_class": {
+      "combined_inner_outer": 2,
+      "healthy": 5,
+      "inner_ring": 9,
+      "outer_ring": 10
+    },
+    "window_damage_origin": {
+      "artificial": 49741,
+      "healthy": 24845,
+      "real": 54694
+    },
+    "window_fault_class": {
+      "combined_inner_outer": 9941,
+      "healthy": 24845,
+      "inner_ring": 44804,
+      "outer_ring": 49690
+    },
+    "window_operating_condition": {
+      "N09_M07_F10": 32292,
+      "N15_M01_F10": 32327,
+      "N15_M07_F04": 32359,
+      "N15_M07_F10": 32302
+    }
+  },
+  "feature_distribution": {
+    "crest_factor": {
+      "artificial": {
+        "median": 8.117786146738489,
+        "p25": 6.85423007338633,
+        "p75": 9.781653179606385
+      },
+      "healthy": {
+        "median": 8.351134462940706,
+        "p25": 7.2992672632405515,
+        "p75": 9.602503872069326
+      },
+      "real": {
+        "median": 5.799123281909822,
+        "p25": 4.993054637143986,
+        "p75": 6.970902660559603
+      }
+    },
+    "high_band_energy": {
+      "artificial": {
+        "median": 56367.294238610615,
+        "p25": 42517.64683943187,
+        "p75": 70059.43085510329
+      },
+      "healthy": {
+        "median": 273828.6894187387,
+        "p25": 59576.94984182663,
+        "p75": 343513.52148484834
+      },
+      "real": {
+        "median": 23141.262228623556,
+        "p25": 17194.16786988874,
+        "p75": 54256.12011657151
+      }
+    },
+    "kurtosis": {
+      "artificial": {
+        "median": 9.84831121103381,
+        "p25": 6.657342372074783,
+        "p75": 17.39124791902618
+      },
+      "healthy": {
+        "median": 14.625748088743627,
+        "p25": 11.808203701807217,
+        "p75": 17.773239456411723
+      },
+      "real": {
+        "median": 5.579560495377606,
+        "p25": 4.088135396271813,
+        "p75": 8.52605154070709
+      }
+    },
+    "low_band_energy": {
+      "artificial": {
+        "median": 345138.2479802907,
+        "p25": 214253.22031474722,
+        "p75": 444894.9397273308
+      },
+      "healthy": {
+        "median": 383931.2917077794,
+        "p25": 271338.3237327059,
+        "p75": 525857.7670664956
+      },
+      "real": {
+        "median": 701474.3563301098,
+        "p25": 364004.707344976,
+        "p75": 1764923.258541843
+      }
+    },
+    "mid_band_energy": {
+      "artificial": {
+        "median": 58878.41951122173,
+        "p25": 45369.80958498551,
+        "p75": 74878.79344005711
+      },
+      "healthy": {
+        "median": 272399.2420591911,
+        "p25": 60266.03083325029,
+        "p75": 346555.1387189493
+      },
+      "real": {
+        "median": 28809.849405310833,
+        "p25": 20765.46764224565,
+        "p75": 60806.658821090045
+      }
+    },
+    "rms": {
+      "artificial": {
+        "median": 0.2331634041951673,
+        "p25": 0.19810212206349986,
+        "p75": 0.26260556989076717
+      },
+      "healthy": {
+        "median": 0.3389317864771749,
+        "p25": 0.20783746023359131,
+        "p75": 0.3800351524256859
+      },
+      "real": {
+        "median": 0.3068591455520773,
+        "p25": 0.2241386184816559,
+        "p75": 0.4758734921584591
+      }
+    },
+    "spectral_centroid_hz": {
+      "artificial": {
+        "median": 8938.781899137335,
+        "p25": 7723.273555008179,
+        "p75": 10676.404089288699
+      },
+      "healthy": {
+        "median": 14030.019658488949,
+        "p25": 10419.061979676748,
+        "p75": 14569.098998546748
+      },
+      "real": {
+        "median": 6601.6962341157,
+        "p25": 5286.147065459651,
+        "p75": 7660.975335718378
+      }
+    }
+  },
+  "feature_version": "bearing-features-v2",
+  "frozen_test_accessed": false,
+  "frozen_test_intersection": [],
+  "git_sha": "7593f701f5e4c0d4ebb9d6bcb86a265b8830f2eb",
+  "healthy_damaged_overlap": {
+    "crest_factor": {
+      "direction_invariant_auc": 0.6885848705696291,
+      "standardized_mean_difference": -0.5977013515598695
+    },
+    "high_band_energy": {
+      "direction_invariant_auc": 0.8069389487094607,
+      "standardized_mean_difference": -1.4021759998935783
+    },
+    "kurtosis": {
+      "direction_invariant_auc": 0.7339883758452114,
+      "standardized_mean_difference": -0.6435537569493612
+    },
+    "low_band_energy": {
+      "direction_invariant_auc": 0.5880007753920046,
+      "standardized_mean_difference": 0.5691552819480816
+    },
+    "mid_band_energy": {
+      "direction_invariant_auc": 0.7840745836230398,
+      "standardized_mean_difference": -1.330805029078283
+    },
+    "rms": {
+      "direction_invariant_auc": 0.5425070316991825,
+      "standardized_mean_difference": 0.08143011463974087
+    },
+    "spectral_centroid_hz": {
+      "direction_invariant_auc": 0.8710584622119678,
+      "standardized_mean_difference": -1.692262104581126
+    }
+  },
+  "pca": {
+    "eta_squared": {
+      "bearing_identity": [
+        0.6648088525369208,
+        0.8079301406447739,
+        0.5394136107099351
+      ],
+      "damage_origin": [
+        0.4112687706585879,
+        0.12652795519956014,
+        0.15325638492747462
+      ],
+      "operating_condition": [
+        0.21033694378736667,
+        0.09637285471098615,
+        0.02781736005640052
+      ]
+    },
+    "explained_variance_ratio": [
+      0.4466862864028708,
+      0.38521160911040186,
+      0.12631426193453196
+    ],
+    "purpose": "analysis only; coordinates are not model inputs",
+    "sample_rows": 13000
+  },
+  "rows": 129280,
+  "scope": "Paderborn 26 Development bearings only"
+}

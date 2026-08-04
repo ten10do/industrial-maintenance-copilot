@@ -13,7 +13,13 @@ from app.ml.artifacts import load_artifact_bundle
 from app.ml.features import extract_features
 from app.ml.inference import predict
 from app.ml.registry import active_model, promote_model, rollback_model
-from app.ml.types import TelemetryWindow
+from app.ml.types import FeatureVector, TelemetryWindow
+from app.ml.v2_features import (
+    FEATURE_SCHEMA_VERSION_V2,
+    extract_dual_channel_features,
+    extract_envelope_features,
+    extract_spectral_features_v2,
+)
 from app.ml.validation import SignalValidationError
 from app.models.base import RiskLevelEnum
 from app.models.equipment import Equipment
@@ -104,19 +110,7 @@ def online_inference(
             expected_model_version=registered.version,
             expected_feature_schema_version=registered.feature_schema_version,
         )
-        vector = extract_features(
-            TelemetryWindow(
-                equipment_id=str(payload.equipment_id),
-                bearing_id=payload.bearing_id,
-                signal=tuple(payload.signal),
-                sampling_rate_hz=payload.sampling_rate_hz,
-                started_at=payload.started_at,
-                ended_at=payload.ended_at,
-                unit=payload.unit,
-                operating_condition=payload.operating_condition,
-                context=payload.context,
-            )
-        )
+        vector = _extract_online_features(payload, registered.feature_schema_version)
         result = predict(artifact, vector)
     except (FileNotFoundError, SignalValidationError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -202,3 +196,58 @@ def _risk_level(probability: float) -> RiskLevelEnum:
     if probability >= 0.4:
         return RiskLevelEnum.medium
     return RiskLevelEnum.low
+
+
+def _extract_online_features(
+    payload: OnlineInferenceIn, feature_schema_version: str
+) -> FeatureVector:
+    window = TelemetryWindow(
+        equipment_id=str(payload.equipment_id),
+        bearing_id=payload.bearing_id,
+        signal=tuple(payload.signal),
+        sampling_rate_hz=payload.sampling_rate_hz,
+        started_at=payload.started_at,
+        ended_at=payload.ended_at,
+        unit=payload.unit,
+        operating_condition=payload.operating_condition,
+        context=payload.context,
+    )
+    vector = extract_features(window)
+    if feature_schema_version != FEATURE_SCHEMA_VERSION_V2:
+        return vector
+    if payload.task_type != "fault_classification":
+        raise ValueError(
+            "bearing-features-v2 online input currently supports Fault only"
+        )
+    required = ("phase_current_1", "phase_current_2")
+    missing = [name for name in required if name not in payload.channels]
+    if missing:
+        raise ValueError(f"bearing-features-v2 channels missing: {missing}")
+    current_1 = payload.channels["phase_current_1"]
+    current_2 = payload.channels["phase_current_2"]
+    if len(current_1) != len(payload.signal) or len(current_2) != len(payload.signal):
+        raise ValueError("bearing-features-v2 high-rate channels must align")
+    values = dict(vector.values)
+    values.update(extract_envelope_features(payload.signal, payload.sampling_rate_hz))
+    values.update(
+        extract_spectral_features_v2(payload.signal, payload.sampling_rate_hz)
+    )
+    values.update(
+        extract_dual_channel_features(
+            current_1,
+            current_2,
+            payload.sampling_rate_hz,
+            first_name="phase_current_1",
+            second_name="phase_current_2",
+            cross_prefix="current_cross",
+        )
+    )
+    return FeatureVector(
+        bearing_id=vector.bearing_id,
+        window_started_at=vector.window_started_at,
+        window_ended_at=vector.window_ended_at,
+        schema_version=FEATURE_SCHEMA_VERSION_V2,
+        values=values,
+        operating_condition=payload.operating_condition,
+        quality_score=vector.quality_score,
+    )
