@@ -291,8 +291,8 @@ def _selected_explainability(
         estimator.fit(transformed_train, damaged[train_indices])
 
         # Bound explanation cost with a deterministic sample spanning the fold.
-        stride = max(1, len(validation_indices) // 1_000)
-        sample_positions = np.arange(0, len(validation_indices), stride)[:1_000]
+        stride = max(1, len(validation_indices) // 250)
+        sample_positions = np.arange(0, len(validation_indices), stride)[:250]
         importance = permutation_importance(
             estimator,
             transformed_validation[sample_positions],
@@ -330,7 +330,7 @@ def _selected_explainability(
     ]
     return {
         "scope": (
-            "Development held-out folds only; deterministic maximum 1000 rows/fold"
+            "Development held-out folds only; deterministic maximum 250 rows/fold"
         ),
         "global_permutation_importance": sorted(
             aggregated,
