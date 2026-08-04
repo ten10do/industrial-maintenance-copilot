@@ -1,0 +1,71 @@
+{
+  "algorithm": "random_forest",
+  "config": "configs/ml/paderborn_fault_v2_final.yaml",
+  "config_commit": "029515104839c4719f018fa21ae5de12c2864859",
+  "config_sha256": "2bce080f002fd377fef6a65579f9d32ebe5286524a9d10a9aa749adfe2ed13a9",
+  "dataset_manifest_sha256": "d2a1271dca3d861ccd6b836cf4482a355de39f9d43115190be382c2ecca21d29",
+  "dataset_version": "paderborn-snapshot-e513a6320d755ce5",
+  "development_processed_sha256": "2d89f1016f5df5e87b1c3e3789191200620fe1daa6b722328eaafe0f27e78e22",
+  "development_summary": "docs/ml-experiments/v2/paderborn-fault-results.json",
+  "development_summary_sha256": "1615adcfb5879d8f4f12f93c2ab6caa11f2d38f31c5fbe13b76504e546f340ec",
+  "experiment_id": "paderborn-fault-v2-single-final-test",
+  "feature_family": "F4",
+  "feature_version": "bearing-features-v2",
+  "finished_at": "2026-08-04T02:42:25.697871+00:00",
+  "fold_manifest": "data/manifests/paderborn-v2-cv-folds.json",
+  "frozen_test_accessed": true,
+  "frozen_test_bearings": [
+    "K004",
+    "KA03",
+    "KA22",
+    "KB27",
+    "KI01",
+    "KI04"
+  ],
+  "frozen_test_feature_sha256": "69e51b7cee210bb16936b56a3df049864e0d953fdcbe0652aaae77e908b23040",
+  "frozen_test_rows": 29860,
+  "hyperparameters": {
+    "class_weight": "balanced_subsample",
+    "max_depth": 12,
+    "max_features": "sqrt",
+    "min_samples_leaf": 2,
+    "n_estimators": 300
+  },
+  "metrics": {
+    "brier": 0.02179558942653869,
+    "confusion_matrix": [
+      [
+        4835,
+        128
+      ],
+      [
+        18,
+        24879
+      ]
+    ],
+    "damaged_recall": 0.9992770213278708,
+    "false_negative_rate": 0.0007229786721292264,
+    "false_positive_rate": 0.025790852307072343,
+    "healthy_recall": 0.9742091476929277,
+    "macro_f1": 0.9911003535916915,
+    "macro_precision": 0.995586193623873,
+    "macro_recall": 0.9867430845103993,
+    "pr_auc": 0.9999254194185458,
+    "roc_auc": 0.9996348283560144
+  },
+  "model_artifact_path": "artifacts/paderborn-v2/paderborn-fault-v2-20260804T024225Z",
+  "model_artifact_sha256": "68ceffc5dd066c51d4727eff1b4f3cd80cccd9c8655089971e312ef5f3e73b25",
+  "prediction_artifact_hash": "7abee7d69e986dd60e2c212c4e4641c9b74053e4802f9e971867dee92a6c751c",
+  "promotion": {
+    "checks": {
+      "healthy_recall_at_least_0_60": true,
+      "macro_recall_at_least_0_70": true
+    },
+    "passed": true
+  },
+  "registry_status": "eligible_for_candidate_registration",
+  "replay_policy": "forbidden",
+  "seed": 20260803,
+  "started_at": "2026-08-04T02:37:07.931280+00:00",
+  "threshold": 0.5
+}
