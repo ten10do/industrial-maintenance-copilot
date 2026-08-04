@@ -232,11 +232,17 @@ def _stage_two_evaluation(
     truth: list[int] = []
     probability: list[float] = []
     for _, train_indices, validation_indices in folds:
-        train_indices = train_indices[damaged[train_indices] == 1]
-        validation_indices = validation_indices[damaged[validation_indices] == 1]
+        # Fit condition baselines on the complete outer-training fold.  Filtering
+        # healthy rows first would make the F2-F4 normalization baseline empty.
         train, validation, _ = fault_fold_matrices(
             dataset, family, train_indices, validation_indices, damaged
         )
+        train_mask = damaged[train_indices] == 1
+        validation_mask = damaged[validation_indices] == 1
+        train = train[train_mask]
+        validation = validation[validation_mask]
+        train_indices = train_indices[train_mask]
+        validation_indices = validation_indices[validation_mask]
         target_train = np.asarray(origins[train_indices] == "real", dtype=np.int_)
         target_validation = np.asarray(
             origins[validation_indices] == "real", dtype=np.int_
