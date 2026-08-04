@@ -33,6 +33,9 @@ from app.ml.v2_research import grouped_condition_folds
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
+from generate_paderborn_v2_folds import (  # noqa: E402
+    build_manifest as build_paderborn_folds,
+)
 from generate_xjtu_v2_folds import build_manifest as build_xjtu_folds  # noqa: E402
 from prepare_bearing_v2 import prepare_xjtu_bearing  # noqa: E402
 from run_fault_v2 import (  # noqa: E402
@@ -282,6 +285,25 @@ def test_grouped_condition_folds_are_deterministic_and_group_safe() -> None:
         np.testing.assert_array_equal(validation, duplicate[1])
         assert not set(groups[train]) & set(groups[validation])
         assert set(conditions[validation]) == {"C0", "C1", "C2"}
+
+
+def test_paderborn_grouped_manifest_is_reproducible_and_keeps_test_frozen() -> None:
+    split = REPOSITORY_ROOT / "data/manifests/paderborn-split-v1.json"
+    labels = REPOSITORY_ROOT / "data/schemas/paderborn_labels.csv"
+
+    first = build_paderborn_folds(split, labels)
+    second = build_paderborn_folds(split, labels)
+
+    assert first == second
+    frozen = set(first["frozen_test_bearings"])
+    validation = [bearing for fold in first["folds"] for bearing in fold["validation"]]
+    assert len(validation) == len(set(validation)) == 26
+    assert not frozen & set(validation)
+    assert all(
+        {"healthy", "artificial", "real"}
+        <= set(fold["validation_distribution"]["damage_origin"])
+        for fold in first["folds"]
+    )
 
 
 def test_v2_candidate_grids_match_preregistration() -> None:
