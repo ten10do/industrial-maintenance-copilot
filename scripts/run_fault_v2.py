@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
+from sklearn.inspection import permutation_importance
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
@@ -101,6 +102,9 @@ def main() -> None:
             )
             results.append(result)
     selected = _select(results)
+    explainability = _selected_explainability(
+        dataset, selected, folds, damaged, args.jobs
+    )
     stage_two = _stage_two_evaluation(
         dataset,
         selected,
@@ -120,6 +124,7 @@ def main() -> None:
         "frozen_test_accessed": False,
         "candidate_count": len(results),
         "selected": selected,
+        "explainability": explainability,
         "stage_two": stage_two,
         "all_candidates": results,
     }
@@ -261,6 +266,106 @@ def _stage_two_evaluation(
             np.asarray(truth, dtype=np.int_), np.asarray(probability, dtype=np.float64)
         ),
         "promotion_role": "none; Stage 1 remains the safety classifier",
+    }
+
+
+def _selected_explainability(
+    dataset: V2Dataset,
+    selected: dict[str, Any],
+    folds: list[tuple[str, NDArray[np.int_], NDArray[np.int_]]],
+    damaged: NDArray[np.int_],
+    jobs: int,
+) -> dict[str, Any]:
+    family = selected["family"]
+    candidate = Candidate(selected["algorithm"], selected["hyperparameters"])
+    importance_records: list[dict[str, float]] = []
+    local_records: list[dict[str, Any]] = []
+    for fold_id, train_indices, validation_indices in folds:
+        train, validation, feature_names = fault_fold_matrices(
+            dataset, family, train_indices, validation_indices, damaged
+        )
+        scaler = StandardScaler().fit(train)
+        transformed_train = scaler.transform(train)
+        transformed_validation = scaler.transform(validation)
+        estimator = _classifier(candidate, jobs)
+        estimator.fit(transformed_train, damaged[train_indices])
+
+        # Bound explanation cost with a deterministic sample spanning the fold.
+        stride = max(1, len(validation_indices) // 1_000)
+        sample_positions = np.arange(0, len(validation_indices), stride)[:1_000]
+        importance = permutation_importance(
+            estimator,
+            transformed_validation[sample_positions],
+            damaged[validation_indices[sample_positions]],
+            scoring="recall_macro",
+            n_repeats=3,
+            random_state=SEED,
+            n_jobs=jobs,
+        )
+        importance_records.append(
+            {
+                name: float(value)
+                for name, value in zip(
+                    feature_names, importance.importances_mean, strict=True
+                )
+            }
+        )
+        local_records.append(
+            _local_fault_contributors(
+                estimator,
+                transformed_validation[0],
+                feature_names,
+                fold_id,
+            )
+        )
+    names = sorted({name for record in importance_records for name in record})
+    aggregated = [
+        {
+            "feature": name,
+            "mean_macro_recall_importance": float(
+                np.mean([record.get(name, 0.0) for record in importance_records])
+            ),
+        }
+        for name in names
+    ]
+    return {
+        "scope": (
+            "Development held-out folds only; deterministic maximum 1000 rows/fold"
+        ),
+        "global_permutation_importance": sorted(
+            aggregated,
+            key=lambda item: abs(item["mean_macro_recall_importance"]),
+            reverse=True,
+        ),
+        "sample_level_contributors": local_records,
+    }
+
+
+def _local_fault_contributors(
+    estimator: Any,
+    features: NDArray[np.float64],
+    feature_names: tuple[str, ...],
+    fold_id: str,
+) -> dict[str, Any]:
+    coefficient = getattr(estimator, "coef_", None)
+    if coefficient is None:
+        return {
+            "fold_id": fold_id,
+            "status": "unavailable",
+            "reason": "selected estimator has no reliable native linear attribution",
+        }
+    contributions = np.asarray(coefficient).reshape(-1) * features
+    order = np.argsort(np.abs(contributions))[::-1][:10]
+    return {
+        "fold_id": fold_id,
+        "status": "linear scaled_feature_x_coefficient",
+        "top_contributors": [
+            {
+                "feature": feature_names[index],
+                "contribution": float(contributions[index]),
+            }
+            for index in order
+        ],
     }
 
 

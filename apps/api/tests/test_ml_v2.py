@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -34,7 +35,15 @@ sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
 
 from generate_xjtu_v2_folds import build_manifest as build_xjtu_folds  # noqa: E402
 from prepare_bearing_v2 import prepare_xjtu_bearing  # noqa: E402
-from run_fault_v2 import _candidates as fault_candidates  # noqa: E402
+from run_fault_v2 import (  # noqa: E402
+    _binary_metrics as fault_binary_metrics,
+)
+from run_fault_v2 import (  # noqa: E402
+    _candidates as fault_candidates,
+)
+from run_fault_v2 import (  # noqa: E402
+    _local_fault_contributors,
+)
 from run_rul_v2 import _candidates as rul_candidates  # noqa: E402
 
 
@@ -182,6 +191,30 @@ def test_v2_promotion_policies_do_not_lower_safety_thresholds() -> None:
     }
     assert rul_promotion(passing_rul)["passed"]
     assert not rul_promotion({**passing_rul, "r2": 0.0})["passed"]
+
+
+def test_fault_metrics_preserve_per_class_recall() -> None:
+    metrics = fault_binary_metrics(
+        np.asarray([0, 0, 1, 1]), np.asarray([0.1, 0.8, 0.7, 0.9])
+    )
+
+    assert metrics["healthy_recall"] == pytest.approx(0.5)
+    assert metrics["damaged_recall"] == pytest.approx(1.0)
+    assert metrics["false_positive_rate"] == pytest.approx(0.5)
+    assert metrics["false_negative_rate"] == pytest.approx(0.0)
+
+
+def test_fault_local_attribution_is_honest_about_model_support() -> None:
+    linear = SimpleNamespace(coef_=np.asarray([[2.0, -1.0]]))
+    available = _local_fault_contributors(
+        linear, np.asarray([3.0, 4.0]), ("rms", "kurtosis"), "fold-1"
+    )
+    unavailable = _local_fault_contributors(
+        SimpleNamespace(), np.asarray([3.0]), ("rms",), "fold-1"
+    )
+
+    assert available["top_contributors"][0]["feature"] == "rms"
+    assert unavailable["status"] == "unavailable"
 
 
 def test_experiment_run_requires_completion_and_records_artifact_hash(
