@@ -71,6 +71,10 @@ def main() -> None:
         config.get("dataset_version") != development.dataset_version
         or dataset_manifest.get("version") != development.dataset_version
         or config.get("feature_version") != "bearing-features-v2"
+        or config.get("dataset_manifest_sha256") != _sha256(args.dataset_manifest)
+        or config.get("fold_manifest_sha256") != _sha256(args.fold_manifest)
+        or config.get("development_processed_sha256") != development.processed_sha256
+        or config.get("feature_cache_config_sha256") != development.config_sha
     ):
         raise ValueError("final config dataset/feature lineage does not match inputs")
     labels = _labels(args.labels)
