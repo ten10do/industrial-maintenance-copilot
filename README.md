@@ -3,159 +3,330 @@
 **AI-Powered Industrial Intelligent Maintenance and Predictive Maintenance Platform**
 
 [![CI](https://github.com/ten10do/industrial-maintenance-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/ten10do/industrial-maintenance-copilot/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB)
 ![Next.js](https://img.shields.io/badge/Next.js-15.1.12-black)
-![FastAPI](https://img.shields.io/badge/FastAPI-Python%203.11-009688)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1)
-![License](https://img.shields.io/badge/release-v1.0.0-blue)
+![ML status](https://img.shields.io/badge/Fault%20V2-non--production%20staging-orange)
 
-项目已从以工单为中心的被动运维系统，增量升级为以设备健康状态为中心的主动智能运维平台。原“工单 Copilot”全部能力保留在“智能工单中心”，并新增设备资产、软件仿真、实时遥测、异常检测、故障诊断、风险预测、维护策略、人员与备件调度、高风险操作审批和维修效果验证。
+将设备遥测、异常检测、真实试验数据故障预测、RAG 诊断、受控 Agent 运维决策、智能工单与人工审批串联为可追溯、可审计的工业运维闭环。系统默认使用软件设备模拟器与 Mock AI，无需真实设备或付费 API 即可运行完整业务流程。
 
-> 本项目是工业运维业务与 AI 工程能力演示系统。默认仅连接 Mock Equipment Gateway，不连接真实 PLC、SCADA 或生产设备，不应作为真实工业控制系统使用。AI 不会直接执行高风险操作。
+> **Project Status**
+>
+> - Core engineering development: **complete**
+> - Fault Model V2: **local non-production staging research**
+> - RUL Model: **promotion rejected**
+> - Production deployment of current `master`: **not performed**
+> - Real PLC / SCADA / field sensor integration: **not performed**
 
-## Existing v1 Demo
+## What This Project Does
 
-- Web：[https://industrial-maintenance-copilot.netlify.app](https://industrial-maintenance-copilot.netlify.app)
-- API：[https://industrial-maintenance-copilot-api.onrender.com](https://industrial-maintenance-copilot-api.onrender.com)
-- Health：[https://industrial-maintenance-copilot-api.onrender.com/health](https://industrial-maintenance-copilot-api.onrender.com/health)
-- API Docs：[https://industrial-maintenance-copilot-api.onrender.com/docs](https://industrial-maintenance-copilot-api.onrender.com/docs)
+- 采集或模拟设备遥测，监控工业电机与轴承健康状态。
+- 通过确定性规则执行数据质量检查、异常检测、健康评分与风险告警。
+- 使用真实轴承试验台数据研究跨轴承 Fault Classification，并把合格结果接入受控 Staging。
+- 对 XJTU-SY run-to-failure 数据开展 RUL Research，未通过 Promotion Gate 的模型不会进入 Staging。
+- 结合设备手册、SOP 和历史案例，以 RAG evidence 支撑故障诊断与维修建议。
+- 通过 Workflow Orchestrator 串联诊断、知识、决策、工单和调度步骤，并保留 Agent/Tool 审计轨迹。
+- 管理智能工单、维修人员、技能、备件、审批和维修效果验证。
+- 通过 Human-in-the-loop 阻止 AI 绕过审批执行高风险设备命令。
 
-> 本分支没有部署生产环境。以上地址是升级前的 v1 演示，在 API、数据库、Worker/Scheduler 与 Web 按发布顺序协同升级前，不能作为本平台验收结果。
+## End-to-End Maintenance Loop
 
-公开演示账号使用同一密码：`Demo123456`。
-
-| 账号 | 角色 | 适合体验 |
-| --- | --- | --- |
-| `admin@example.com` | 管理员 | 系统管理与完整数据视图 |
-| `supervisor@example.com` | 主管 | 分派、验收、退回和报表 |
-| `tech@example.com` | 维修工程师 | 接单、执行、暂停、恢复和完工提交 |
-
-公开环境只包含虚构演示数据，AI 固定使用 Mock 模式。演示账号不具备 Netlify、Render 或 Neon 平台权限。
-
-## Screenshots
-
-| 主管仪表盘 | 故障上报 |
-| --- | --- |
-| ![主管仪表盘](docs/images/dashboard.png) | ![故障上报](docs/images/fault-report.png) |
-
-| 工单执行详情 | 知识库 |
-| --- | --- |
-| ![工单执行详情](docs/images/work-order-detail.png) | ![知识库](docs/images/knowledge-base.png) |
-
-![带结构化引用的 Mock Copilot](docs/images/copilot.png)
-
-## Core Features
-
-- 智能运维驾驶舱：设备健康分、实时异常、风险预测、审批与工单总览
-- 设备资产中心：设备档案、额定参数、运行状态、健康分、风险、传感器与维护计划
-- 软件设备仿真：工业电机与轴承八类场景、固定随机种子、启动/暂停/重置/单步
-- 实时状态监测：振动 RMS、轴承温度、电流、电压、转速、负载、环境温度与累计运行时间
-- 确定性异常检测：九类典型故障映射、证据链、诊断摘要和健康分更新
-- 预测性维护：失效概率、剩余寿命、维护窗口、结构化诊断、RAG 引用与维修策略
-- 运维 Agent 审计：Agent Run、Tool Invocation、低置信度人工复核
-- 智能调度：人员技能/负载匹配、备件预留与库存缺口
-- 安全控制：高风险命令先形成审批单，人工批准后才调用 Equipment Gateway
-- 故障上报、结构化解析与一键转工单
-- 工单创建、分派、接单、开始、暂停、恢复、完工、验收、退回和取消
-- 服务端状态机、角色权限与非法转换拦截
-- 安全检查清单、维修记录、工时、备件和附件
-- 状态历史、分派历史、验收记录和审计轨迹
-- 维修效果验证：通过后关闭工单，失败后自动重新打开
-- 维修报告与待人工审核的知识案例草稿
-- 知识检索和带来源引用的 Copilot 问答
-- SQLite 零配置本地运行与 PostgreSQL 部署支持
-- Docker、GitHub Actions 和公开环境 Smoke Test
-
-完整升级审计见 [`docs/upgrade-audit.md`](docs/upgrade-audit.md)，架构与演示说明见 [`docs/intelligent-maintenance-platform.md`](docs/intelligent-maintenance-platform.md)。
-
-## Business Workflow
+ML 负责可复现的数值预测；Agent 负责消费已记录的 ML output、检索证据并协调业务流程。LLM 不直接预测 RUL，也不能直接停机。
 
 ```mermaid
-flowchart LR
-    A["设备数据采集"] --> B["实时状态监测"]
-    B --> C["异常检测"]
-    C --> D["Agent 诊断 + RAG"]
-    D --> E["风险预测与维护窗口"]
-    E --> F["维修策略与智能工单"]
-    F --> G["人员与备件调度"]
-    G --> H{"高风险操作审批"}
-    H -->|批准| I["维修执行"]
-    H -->|驳回| F
-    I --> J["维修效果验证"]
-    J --> K["运维知识沉淀"]
+flowchart TB
+    Device["Device / Simulator"] --> ReadGateway["Equipment Gateway — read"]
+    ReadGateway --> Telemetry["Telemetry"]
+    Telemetry --> Quality["Data Quality"]
+    Quality --> Anomaly["Anomaly Detection"]
+    Anomaly --> Health["Operational Health Score"]
+    Health --> Predictive["Fault ML / RUL Research"]
+    Predictive --> Record["PredictionRecord"]
+    Record --> Orchestrator["Workflow Orchestrator"]
+    Orchestrator --> Diagnosis["Diagnosis Agent"]
+    Diagnosis --> RAG["RAG Evidence"]
+    RAG --> Decision["Maintenance Decision"]
+    Decision --> WorkOrder["Smart Work Order"]
+    WorkOrder --> Scheduling["Technician / Spare-parts Scheduling"]
+    Scheduling --> Approval{"Human Approval"}
+    Approval -->|approved| CommandGateway["Equipment Gateway — command"]
+    Approval -->|rejected| Decision
+    CommandGateway --> Verification["Maintenance Verification"]
+    Verification --> Knowledge["Knowledge Capture"]
 ```
-
-核心状态流转：
-
-```text
-待分派 → 已分派 → 已接受 → 处理中 → 待验收 → 已完成
-                       ↕ 暂停
-                                  └→ 已退回 → 重新处理 → 待验收
-```
-
-- 主管或管理员负责创建、编辑、分派、验收、退回和取消。
-- 被分派的维修工程师负责接单、执行、维修记录与完工提交。
-- 完工前必须满足必做检查项，并填写根因、措施、测试结果、维修日志和工时等证据。
-- 高风险工单必须补充完工照片；退回后已有证据保留，可修正后重新提交。
 
 ## Architecture
 
 ```mermaid
-flowchart LR
-    User["维修工程师 / 主管"] --> Web["Next.js Web<br/>Netlify"]
-    Web --> API["FastAPI<br/>Render"]
-    API --> DB[("PostgreSQL 16")]
-    API --> Redis[("Redis")]
-    Worker["Worker / Scheduler"] --> DB
-    Worker --> Redis
-    API --> Equipment["Equipment Gateway<br/>Mock Simulator"]
-    API --> Copilot["LLM Provider + RAG"]
-    Copilot --> KB["Knowledge Base"]
-    API --> Audit["Agent / Tool / Approval Audit"]
+flowchart TB
+    subgraph Data["Data / Industrial Layer"]
+        Simulator["Equipment Simulator"]
+        Gateway["Equipment Gateway"]
+        Telemetry["Telemetry"]
+        Simulator --> Gateway --> Telemetry
+    end
+
+    subgraph Predictive["Predictive Layer"]
+        Quality["Data Quality"]
+        Features["Feature Pipeline"]
+        Anomaly["Rule-based Anomaly Detection"]
+        Health["Operational Health Score"]
+        Fault["Fault Model"]
+        RUL["RUL Model / Research"]
+        Gate{"Promotion Gate"}
+        Rejected["Rejected"]
+        Registry["Model Registry"]
+        Prediction["PredictionRecord"]
+        Quality --> Features
+        Quality --> Anomaly --> Health
+        Features --> Fault --> Gate
+        Features --> RUL --> Gate
+        Gate -->|PASS| Registry
+        Gate -->|FAIL| Rejected
+        Registry --> Prediction
+    end
+
+    subgraph Agents["AI / Agent Layer"]
+        Orchestrator["Workflow Orchestrator"]
+        Monitoring["Monitoring"]
+        Diagnosis["Diagnosis Agent"]
+        KnowledgeAgent["Knowledge / RAG"]
+        DecisionAgent["Decision Agent"]
+        WorkOrderAgent["Work Order Agent"]
+        SchedulingAgent["Scheduling Agent"]
+        Orchestrator --> Monitoring --> Diagnosis --> KnowledgeAgent
+        KnowledgeAgent --> DecisionAgent --> WorkOrderAgent --> SchedulingAgent
+    end
+
+    subgraph Business["Business / Safety Layer"]
+        WorkOrders["Work Orders"]
+        Technicians["Technicians"]
+        Parts["Spare Parts"]
+        Approval["Human Approval"]
+        Verification["Maintenance Verification"]
+        Capture["Knowledge Capture"]
+        WorkOrders --> Technicians --> Parts --> Approval
+        Approval --> Verification --> Capture
+    end
+
+    subgraph Infra["Infrastructure"]
+        Web["Next.js"]
+        API["FastAPI"]
+        DB[("PostgreSQL / SQLite")]
+        Redis[("Redis")]
+        Runtime["Worker / Scheduler"]
+        Docker["Docker Compose"]
+        CI["GitHub Actions"]
+        Web --> API --> DB
+        Runtime --> DB
+        Runtime --> Redis
+        Docker -.-> Web
+        Docker -.-> API
+        CI -.-> Docker
+    end
+
+    Telemetry --> Quality
+    Health --> Orchestrator
+    Prediction --> Orchestrator
+    SchedulingAgent --> WorkOrders
+    Approval --> Gateway
+    API -.-> Orchestrator
 ```
 
-生产演示只维护一套部署：Netlify + Render + Neon。详细配置、重置与回滚步骤见 [部署指南](docs/deployment.md)。
+## Core Capabilities
+
+| 领域 | 已实现能力 |
+| --- | --- |
+| 设备与遥测 | 资产档案、传感器、实时监测、固定随机种子的电机/轴承软件仿真 |
+| 检测与诊断 | 数据质量、九类故障规则、健康分、结构化诊断、证据与置信度 |
+| 智能工单 | 上报、创建、分派、接单、执行、暂停、完工、验收、退回、状态审计 |
+| 资源调度 | 技能/负载匹配、备件预留与缺口、维护窗口建议 |
+| 安全与闭环 | 高风险操作审批、Equipment Gateway 隔离、维修验证、知识草稿沉淀 |
+| 可观测性 | Dataset/Model lineage、PredictionRecord、AgentRun、ToolInvocation、审批轨迹 |
+
+首期聚焦三相工业电机及轴承系统，架构可通过 Gateway、Provider 和设备类型扩展到泵、风机、压缩机、机床、机器人及 PLC 控制系统。
+
+## Predictive ML Research
+
+项目不只是把模型包装成 API，而是实现了从官方数据来源到 Staging 的可审计研究链路。原始数据、处理后的完整数组和训练 artifact 均不提交 Git；CI 使用明确标注的 synthetic fixtures 验证工程链路。
+
+```mermaid
+flowchart LR
+    Dataset["Official Bearing Dataset"] --> Audit["Dataset Audit"]
+    Audit --> Split["Grouped Split"]
+    Split --> Leakage["Leakage Audit"]
+    Leakage --> Features["Feature Engineering"]
+    Features --> Training["Model Training"]
+    Training --> Validation["Validation"]
+    Validation --> Candidate["Model Registry — Candidate"]
+    Candidate --> Gate{"Promotion Gate"}
+    Gate -->|PASS| Staging["Non-production Staging"]
+    Gate -->|FAIL| Rejected["Rejected"]
+```
+
+### Real Experimental Datasets
+
+这里的“真实数据”是 **real experimental / test-rig data**，不是工厂生产数据。
+
+| Dataset | 本地审计范围 | 研究用途 | License / 分发边界 |
+| --- | --- | --- | --- |
+| [Paderborn Bearing Data Center](https://mb.uni-paderborn.de/en/kat/research/bearing-datacenter/data-sets-and-download) | 32 bearings、2,560 MAT、受控轴承试验台 | Fault Classification / cross-bearing generalization | CC BY-NC 4.0；需署名，非商业；raw data 未提交 |
+| [XJTU-SY](https://biaowang.tech/xjtu-sy-bearing-datasets/) | 15 run-to-failure bearings、9,216 CSV、3 operating conditions | Cross-bearing RUL Research | 作者公开来源未发现明确再分发 License；raw data 未提交 |
+
+### Fault Model Research — V1 to V2
+
+| Experiment | Evaluation | Macro Recall | Healthy Recall | PR-AUC | Status |
+| --- | --- | ---: | ---: | ---: | --- |
+| V1 HistGradientBoosting | Fixed Validation / best recall | 0.6764 | 0.0000 | 0.6300 | Rejected |
+| V1 Random Forest | Fixed Validation / best PR-AUC | 0.6532 | 0.0006 | 0.7122 | Rejected |
+| V2 F4 Random Forest | 26-bearing Grouped Development CV | 0.7904 | 0.6005 | 0.9482 | Passed research gate |
+| V2 F4 Random Forest | One-time Frozen Test | 0.9867 | 0.9742 | 0.9999 | Non-production evidence |
+
+Fault V2 修复了 V1 aggregate healthy-recall collapse，并达到 **non-production staging research criteria**。该结论必须与以下限制一起阅读：
+
+- Frozen Test 只有 6 个独立轴承，其中只有 1 个健康轴承。
+- 29,860 个窗口在轴承内部相关，不能视为 29,860 个独立样本。
+- Development fold macro-recall standard deviation 为 0.2550，worst fold 为 0.4548。
+- Development-only PCA 仍显示强烈的隐式 bearing-domain signal。
+- 结果不代表 fleet generalization 或生产可用性；Fault V2 只进入本地、非生产 Staging。
+
+详见 [V1 Fault 报告](docs/ml-experiments/paderborn-fault-v1.md)、[V1/V2 对比](docs/ml-experiments/v2-comparison.md)与 [Final Test 只读取证](docs/ml-experiments/v2/final-test-forensics.md)。
+
+### RUL Research — Promotion Rejected
+
+V2 最优未通过方案为 R0（15-bearing grouped cross-bearing estimate）：
+
+| MAE | RMSE | R² | Late Error | Promotion |
+| ---: | ---: | ---: | ---: | --- |
+| 10.0543 h | 14.2737 h | -0.3288 | 2.0043 h | Rejected |
+
+Dual-channel features 减少了部分轨迹跳变，causal context 进一步减少 oscillations，但 accuracy 没有改善。R0–R3 全部未同时满足 `MAE <= 5 h` 与 `R² > 0`，因此没有任何 RUL 模型进入 Staging、在线推理或 Agent/工单链路。
+
+> **Not every trained model is allowed to ship.**
+
+详见 [V1 RUL 报告](docs/ml-experiments/xjtu-rul-v1.md)、[V2 R0 报告](docs/ml-experiments/v2/rul-r0-v1.md)与 [V1/V2 对比](docs/ml-experiments/v2-comparison.md)。
+
+## Model Governance
+
+`DatasetVersion`、Feature Version、`TrainingRun`、`ModelVersion`、`ModelMetric` 与 `PredictionRecord` 记录 dataset、config SHA、Git SHA、artifact SHA256、feature schema、metrics 和 inference lineage。
+
+```mermaid
+flowchart LR
+    Training["TrainingRun"] --> Candidate["candidate"]
+    Candidate --> Policy{"Promotion Policy"}
+    Policy -->|PASS| Staging["staging"]
+    Policy -->|FAIL| Rejected["rejected — no promotion"]
+    Staging -->|separate approval| Production["production"]
+    Production --> Archived["archived"]
+```
+
+- Fault V2：仅在本地 registry 中进入 `staging`，`is_production=false`。
+- RUL V2：Promotion Gate 失败，没有 registry entry 或 Staging inference。
+- 默认在线推理只选择 `is_production=true` 的模型；显式 Staging inference 只写 `PredictionRecord`，不会创建业务 `RiskPrediction`。
+- Artifact 只从可信训练流程加载，并校验路径、SHA256、model version 与 feature schema。
+
+## Controlled Agent Workflow
+
+这不是自由对话式 Multi-Agent Chat，而是有固定步骤、输入输出和审计记录的受控工作流：
+
+`Workflow Orchestrator → Monitoring → Diagnosis → Knowledge → Decision → Work Order → Scheduling → Report / Knowledge Capture`
+
+| Agent 可以 | Agent 不可以 |
+| --- | --- |
+| 综合已记录的 ML output 与设备状态 | 修改 ML probability、confidence 或 RUL |
+| 检索 RAG evidence 与历史案例 | 修改 `ModelVersion` 或绕过 Promotion Gate |
+| 生成带证据的维修建议 | 绕过角色、工单状态机或人工审批 |
+| 建议工单、人员、技能与备件 | 自动执行高风险设备命令 |
+| 解释决策并写入 Agent/Tool audit | 把低置信度推断声明为已确认根因 |
+
+Staging probe 以 `dry_run` 运行六个步骤，不创建 RiskPrediction、工单、备件预留、调度变更或设备命令。详见 [Staging Safety Audit](docs/ml-experiments/v2/staging-safety-audit.md)。
+
+## RAG-Grounded Diagnosis
+
+RAG 检索范围包括：
+
+- Equipment manuals
+- Standard Operating Procedures（SOP）
+- Historical maintenance cases
+
+诊断与问答保留 source、citation 和 evidence。自动生成的维修案例先进入 `draft`，经人工审核为 `published` 后才参与后续检索；LLM Provider 不可用时回退到确定性结果并记录降级状态。
+
+## Safety & Human Approval
+
+即使模型输出 `failure probability = 100%`，系统也只能执行：
+
+`Alert → Recommendation → Work Order → Approval Request`
+
+未经主管或管理员审批、维护窗口与安全确认，不会调用 `EquipmentGateway.execute_command()`。批准、驳回、执行结果、审批人和时间均持久化；重复批准不会重复执行命令。
 
 ## Tech Stack
 
-| 层级 | 技术 |
+| Layer | Technology |
 | --- | --- |
-| Web | Next.js 15.1.12、React 19、TypeScript、Tailwind CSS |
-| API | Python 3.11、FastAPI、SQLAlchemy、Pydantic v2 |
-| Database | PostgreSQL 16（生产/CI）/ SQLite（本地默认）、Redis（Worker/Scheduler） |
-| AI | 可插拔 OpenAI 兼容接口；公开环境为确定性 Mock |
-| Test | pytest、Jest、Testing Library、Playwright |
-| Delivery | Docker、Docker Compose、GitHub Actions |
+| Frontend | Next.js 15.1.12、React 19、TypeScript 5.7.2、Tailwind CSS 3.4.16、TanStack Query |
+| Backend | Python 3.11、FastAPI 0.115.6、SQLAlchemy 2、Pydantic 2、Alembic compatibility entrypoint |
+| Data | PostgreSQL 16（CI / Docker Compose）、SQLite（本地默认）、Redis 7 |
+| Async / Worker | Redis 协调的轻量 Python Worker/Scheduler heartbeat runtime；未引入 Celery |
+| ML | scikit-learn 1.6.1、SciPy 1.15.3、NumPy 2.2.6、joblib 1.4.2 |
+| AI | Provider abstraction、OpenAI-compatible optional provider、deterministic Mock、RAG、controlled Agent workflow |
+| Infrastructure | Docker Compose、GitHub Actions、Netlify/Render 配置（仅 legacy deployment） |
+| Testing | Pytest 8.3.4、Jest 29.7、Testing Library、Playwright 1.62 |
 
-## Engineering Highlights
+## Engineering Quality
 
-- 事务内状态转换与权限校验，拒绝未定义的跨状态操作
-- 幂等数据库兼容迁移和空库 Seed
-- 三重确认保护的演示数据重置脚本，无公开重置接口
-- Next.js 同源 `/api` 代理，避免浏览器暴露数据库或服务端密钥
-- CI 使用 PostgreSQL 16 与 Redis，覆盖迁移往返、后端、前端、Docker Compose 和真实浏览器 E2E
-- `/health` 提供存活探测，`/ready` 验证数据库 schema、Redis 与 Provider 模式
+最终研发基线：
 
-## Test Coverage
-
-当前发布基线：
-
-| 范围 | 结果 |
+| Check | Result |
 | --- | --- |
-| Backend | 96 passed；整体覆盖率 73.38%，智能运维服务 85% |
-| Frontend | 16 suites / 220 tests passed |
-| Frontend coverage | Statements 52.47%，Branches 49.11%，Functions 39.50%，Lines 53.01% |
-| Playwright local E2E | 23 passed / 1 个公开环境 Smoke 按配置跳过 |
-| Public demo Smoke | 1 passed |
-| TypeScript / ESLint | 0 errors |
-| Next.js production build | passed，19 个应用路由 |
+| Ruff format / lint | PASS / PASS |
+| MyPy strict | PASS，30 source files |
+| Pytest | 138 passed |
+| Backend coverage | 75.01% |
+| Intelligent-maintenance service coverage | 85% |
+| TypeScript strict / ESLint | PASS / PASS |
+| Jest | 18 suites / 222 tests passed |
+| Frontend coverage | Statements 59.10%，Lines 60.55% |
+| Next.js production build | PASS，19 application pages |
+| Playwright | 23 passed / 1 legacy production smoke skipped |
 
-公开 Smoke 使用 `@playwright/test`，与本地完整 E2E 分开执行。
+GitHub Actions 的 Backend quality、PostgreSQL 16 tests、Frontend quality、Frontend build、Docker Compose smoke 与 Playwright E2E 六个 Job 全部成功。CI 固定使用 Mock AI，不调用付费 API 或生产服务。
 
-## Local Development
+测试仍保留一项 SQLAlchemy Legacy API warning，以及部分 Jest React `act(...)` console warning；它们不影响当前质量门禁，但没有被隐藏或宣称已修复。
 
-前置要求：Python 3.11+、Node.js 22+、npm 10+。
+## Quick Start
 
-启动 API：
+普通 Demo 不需要 Paderborn/XJTU-SY 原始数据、训练 artifact、真实 PLC 或 API Key。默认启用 Mock AI、软件 Equipment Simulator 和演示数据。
+
+### Docker Compose（推荐）
+
+前置：Git 与 Docker Compose。
+
+```bash
+git clone https://github.com/ten10do/industrial-maintenance-copilot.git
+cd industrial-maintenance-copilot
+cp .env.example .env
+docker compose up --build
+```
+
+Windows PowerShell 可使用 `Copy-Item .env.example .env`。启动后访问：
+
+- Web：<http://localhost:3000>
+- API：<http://localhost:8000>
+- Swagger：<http://localhost:8000/docs>
+- Readiness：<http://localhost:8000/ready>
+
+停止本地环境：
+
+```bash
+docker compose down
+```
+
+### Manual Development
+
+前置：Python 3.11+、Node.js 22+、npm 10+。
+
+API：
 
 ```bash
 cd apps/api
@@ -163,129 +334,98 @@ python -m pip install -r requirements.txt
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-启动 Web：
+Web（另一个终端）：
 
 ```bash
 cd apps/web
-npm install
+npm ci
 npm run dev
 ```
 
-本地地址：
+未设置 `DATABASE_URL` 时 API 使用本地 SQLite；未同时设置 `AI_ENABLED=true` 与有效 `LLM_API_KEY` 时使用 Mock AI。环境变量定义见 [`.env.example`](.env.example)。
 
-- Web：<http://localhost:3000>
-- API：<http://localhost:8000>
-- Swagger：<http://localhost:8000/docs>
+## Project Structure
 
-未设置 `DATABASE_URL` 时，API 使用 `apps/api/maintenance.db`。空库首次启动会创建结构并填充演示数据。
-
-## Docker
-
-```bash
-docker compose up --build
-docker compose ps
-docker compose logs -f
-docker compose down -v --remove-orphans
+```text
+industrial-maintenance-copilot/
+├── apps/
+│   ├── api/                    # FastAPI、业务服务、ML、registry、tests
+│   └── web/                    # Next.js、19 个页面、Jest、Playwright
+├── configs/ml/                 # 锁定的训练与 Promotion Gate 配置
+├── data/manifests/             # 数据来源、许可、checksum 与 split manifest
+├── docs/ml-experiments/        # V1/V2 实验、泄漏审计与失败分析
+├── scripts/                    # 数据审计、准备与可复现研究入口
+├── .github/workflows/ci.yml    # 六项 CI Job
+└── docker-compose.yml          # PostgreSQL、Redis、API、Web、Worker/Scheduler
 ```
 
-容器服务地址仍为 Web `http://localhost:3000` 和 API `http://localhost:8000`。
+## Legacy Public Demo
 
-## Environment Variables
+以下地址在 2026-08-04 核验可达，但对应较早的 **v1 work-order-focused release**，不代表当前 `master`。当前 Predictive ML、Fault V2、Model Registry 与 Staging research 均未部署到这些地址。
 
-后端以代码实际变量为准：
+- Legacy Web：<https://industrial-maintenance-copilot.netlify.app>
+- Legacy API：<https://industrial-maintenance-copilot-api.onrender.com>
+- Legacy Health：<https://industrial-maintenance-copilot-api.onrender.com/health>
+- Legacy API Docs：<https://industrial-maintenance-copilot-api.onrender.com/docs>
 
-| 变量 | 用途 | 默认值 |
-| --- | --- | --- |
-| `APP_ENV` | 运行环境 | `development` |
-| `DATABASE_URL` | SQLite 或 PostgreSQL 连接串 | 空，使用 SQLite |
-| `REDIS_URL` | Worker/Scheduler 与就绪探测 | 本地单进程可留空 |
-| `SECRET_KEY` | JWT 签名密钥 | 仅本地占位值 |
-| `FRONTEND_URL` | 唯一允许的生产前端 CORS Origin | `http://localhost:3000` |
-| `AI_ENABLED` | 启用真实模型 | `false` |
-| `LLM_API_BASE` / `LLM_API_KEY` / `LLM_MODEL` | OpenAI 兼容模型配置 | Mock 时不需要 Key |
-| `SEED_ON_STARTUP` | 空库自动 Seed | `true` |
+该公开环境使用虚构 demo data 与 Mock AI（Health 返回 `ai_enabled=false`）。历史环境配置过 `admin@example.com`、`supervisor@example.com`、`tech@example.com` 和公共演示密码，但本轮未重新验证登录凭据，不承诺仍可登录。
 
-前端服务端使用 `API_BASE_URL` 生成同源 `/api` rewrite。浏览器只访问相对路径，不需要公开数据库、JWT 或 LLM Secret，也不需要重复配置 `NEXT_PUBLIC_API_URL`。
+## Legacy Demo Screenshots
 
-复制 [`.env.example`](.env.example) 后仅在本机填写值；不要提交 `.env`。
+这些截图展示旧版工单、故障上报、知识库与 Mock Copilot，不包含当前 Predictive ML、Model Registry 或 V2 research UI。
 
-## Validation Commands
+| 主管仪表盘 | 故障上报 |
+| --- | --- |
+| ![旧版主管仪表盘](docs/images/dashboard.png) | ![旧版故障上报](docs/images/fault-report.png) |
 
-```bash
-# Backend
-cd apps/api
-python -m scripts.quality
-python -m mypy
-python -m pytest --cov=app --cov-report=term-missing
+| 工单执行详情 | 知识库 |
+| --- | --- |
+| ![旧版工单执行详情](docs/images/work-order-detail.png) | ![旧版知识库](docs/images/knowledge-base.png) |
 
-# Frontend
-cd ../web
-npm run typecheck
-npm run lint
-npm test -- --runInBand
-npm run build
-npm run test:e2e
+![旧版带结构化引用的 Mock Copilot](docs/images/copilot.png)
 
-# Public demo smoke
-PUBLIC_DEMO_SMOKE=true \
-E2E_BASE_URL=https://industrial-maintenance-copilot.netlify.app \
-E2E_TECHNICIAN_EMAIL=tech@example.com \
-npx playwright test e2e/public-demo-smoke.spec.ts
-```
+## Dataset & License Notice
 
-PowerShell 请使用 `$env:NAME='value'` 设置对应环境变量。
-
-## Deployment
-
-完整步骤见 [docs/deployment.md](docs/deployment.md)。仓库中的部署入口为：
-
-- `render.yaml`：Render API Blueprint
-- `netlify.toml`：Netlify Next.js 构建与运行时
-- `scripts/reset_demo_data.py`：受保护的演示数据重置
+- Paderborn 数据遵循 CC BY-NC 4.0；本项目的研究结果不建立商业使用权。
+- XJTU-SY 作者来源要求引用论文，但未发现明确 LICENSE/SPDX 条款；公开可下载不等于允许再分发或商业使用。
+- 仓库不提交原始 RAR/MAT/CSV、处理后的完整数组、SQLite registry 或 `joblib` 模型 artifact。
+- 数据和模型只能通过 manifest、config SHA、Git SHA 与 artifact SHA256 追溯；使用者需自行确认原始数据授权。
 
 ## Known Limitations
 
-- 现有线上 v1 演示仍使用 Mock AI；本分支尚未部署生产。
-- Render Free 实例闲置后会休眠，首次请求可能延迟约 50 秒。
-- 文件上传使用 Render 本地临时文件系统；数据库记录持久化，但上传文件不保证跨部署保留。
-- 不连接真实 PLC、SCADA、传感器或生产网络。
-- 备件预留会记录库存占用/缺口，但不执行 ERP 级库存扣减。
-- 规则健康分与剩余寿命是确定性/统计演示值；LLM 仅负责解释，不替代 OEM 诊断。
-- 不提供生产级多租户隔离。
-
-## Predictive ML Pipeline
-
-The repository now includes a deterministic bearing fault-classification,
-failure-risk, and RUL pipeline with group-safe evaluation, a verified artifact
-bundle, model registry, and online prediction records. External datasets and real
-model artifacts are not committed. See
-[docs/real-predictive-ml-pipeline.md](docs/real-predictive-ml-pipeline.md) for the
-official dataset sources, license constraints, reproducible workflow, and current
-limitations.
-
-### Predictive Model Research
-
-- V1 established the reproducible, group-safe data, artifact, registry, and
-  inference pipeline; real datasets and trained artifacts remain local and are
-  excluded from Git.
-- V2's selected Paderborn Fault candidate reached 0.7904 Development OOF macro
-  recall and 0.9867 on its single preregistered Frozen Test. That test contains
-  only six independent bearings (one healthy), with correlated windows on a
-  controlled rig, so the result permits staging research only and is not evidence
-  of fleet or production readiness.
-- XJTU-SY cross-bearing RUL experiments did not meet the promotion gates; no RUL
-  model was registered or promoted.
-- Reproduction requires separately authorized local copies of the official
-  datasets. Training regenerates ignored local caches and model artifacts; no
-  raw dataset, processed array, database, or `joblib` artifact is committed.
-
-See the [V2 final-test forensics](docs/ml-experiments/v2/final-test-forensics.md)
-and [staging safety audit](docs/ml-experiments/v2/staging-safety-audit.md) for the
-evidence and interpretation boundaries.
+- 数据来自受控 bearing test rigs，不是 factory fleet 或真实生产线。
+- 未连接真实 PLC、SCADA、工业相机、物理传感器或生产网络。
+- Fault Frozen Test 只有 6 个独立轴承，且只有 1 个健康轴承。
+- 信号窗口在同一轴承内相关；window-level metrics 不能等同于独立设备泛化。
+- Development Grouped CV 方差较高，worst-fold macro recall 为 0.4548。
+- 传感器特征仍包含强隐式 bearing-domain signal。
+- RUL V2 全部未通过 Promotion Gate，没有 RUL 模型进入 Staging。
+- Paderborn 限于 CC BY-NC 4.0；XJTU-SY 再分发与商业使用权不明确。
+- 历史 Alembic revision chain 不可用；当前使用幂等 compatibility migration entrypoint。
+- 当前 `master` 尚未执行生产数据库迁移、模型 production promotion 或生产部署。
+- 备件预留不执行 ERP 级库存扣减，附件持久化对象存储与多租户隔离未实现。
 
 ## Roadmap
 
-- 对象存储与附件持久化
-- 可配置的定时演示数据重置任务
-- 生产级多租户、组织边界与审计导出
-- 经安全评估后接入真实 LLM 与企业知识源
+研发阶段已经冻结；以下仅为 Future Work，不代表已排期：
+
+- OPC UA / Modbus Equipment Gateway
+- Field telemetry integration
+- Larger independent fleet validation
+- External RUL benchmark with clear redistribution license
+- Alembic revision-chain cleanup
+
+## Documentation
+
+- [平台业务闭环](docs/intelligent-maintenance-platform.md)
+- [系统架构](docs/architecture.md)
+- [Controlled Agent workflow](docs/agent-workflow.md)
+- [安全边界](docs/security.md)
+- [真实数据与 Predictive ML Pipeline](docs/real-predictive-ml-pipeline.md)
+- [Leakage Audit V1](docs/ml-experiments/leakage-audit-v1.md)
+- [Paderborn Fault V1](docs/ml-experiments/paderborn-fault-v1.md)
+- [XJTU-SY RUL V1](docs/ml-experiments/xjtu-rul-v1.md)
+- [V1 / V2 Comparison](docs/ml-experiments/v2-comparison.md)
+- [V2 Final Test Forensics](docs/ml-experiments/v2/final-test-forensics.md)
+- [V2 Staging Safety Audit](docs/ml-experiments/v2/staging-safety-audit.md)
+- [部署与回滚指南](docs/deployment.md)
