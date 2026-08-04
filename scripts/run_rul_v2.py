@@ -199,10 +199,12 @@ def _evaluate_family(
         interval = _tree_interval(estimator, transformed_validation)
         if interval is not None:
             lower[outer_validation], upper[outer_validation] = interval
+        stride = max(1, len(outer_validation) // 1_000)
+        importance_positions = np.arange(0, len(outer_validation), stride)[:1_000]
         importance = permutation_importance(
             estimator,
-            transformed_validation,
-            targets[outer_validation],
+            transformed_validation[importance_positions],
+            targets[outer_validation[importance_positions]],
             scoring="neg_mean_absolute_error",
             n_repeats=3,
             random_state=SEED,
@@ -287,6 +289,9 @@ def _evaluate_family(
         "smoothed_per_bearing_trajectory": smoothed_stability["per_bearing"],
         "outer_folds": outer_records,
         "uncertainty": uncertainty,
+        "explainability_scope": (
+            "Development held-out folds; deterministic maximum 1000 rows/fold"
+        ),
         "global_permutation_importance": _aggregate_importance(importance_records),
         "sample_level_contributors": local_records,
         "artifact_hash": hashlib.sha256(oof.tobytes()).hexdigest(),
@@ -484,6 +489,9 @@ def _select(results: list[dict[str, Any]]) -> dict[str, Any]:
         "smoothed_metrics": selected["smoothed_metrics"],
         "promotion": selected["promotion"],
         "uncertainty": selected["uncertainty"],
+        "explainability_scope": selected.get(
+            "explainability_scope", "all Development held-out rows/fold"
+        ),
         "global_permutation_importance": selected["global_permutation_importance"][:20],
         "experiment_id": selected["experiment_id"],
     }
