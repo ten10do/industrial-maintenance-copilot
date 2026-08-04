@@ -28,7 +28,12 @@ from app.ml.v2_governance import (
     rul_promotion,
     trajectory_metrics,
 )
-from app.ml.v2_research import grouped_condition_folds
+from app.ml.v2_research import (
+    PaderbornFaultV2Preprocessor,
+    V2Dataset,
+    fault_fold_matrices,
+    grouped_condition_folds,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPOSITORY_ROOT / "scripts"))
@@ -112,6 +117,57 @@ def test_condition_baseline_uses_only_rows_passed_to_fit() -> None:
     assert before[0]["condition_normalized_rms"] == pytest.approx(3.0)
     assert after[0]["condition_normalized_rms"] > 1_000_000
     assert baseline.pooled["rms"] == pytest.approx((1.5, 0.5))
+
+
+def test_final_fault_preprocessor_matches_fold_local_training_transform() -> None:
+    names = (
+        "rms",
+        "kurtosis",
+        "crest_factor",
+        "spectral_centroid_hz",
+        "low_band_energy",
+        "mid_band_energy",
+        "high_band_energy",
+        "low_energy_ratio",
+        "mid_energy_ratio",
+        "high_energy_ratio",
+        "envelope_rms",
+    )
+    features = np.arange(8 * len(names), dtype=np.float64).reshape(8, len(names))
+    dataset = V2Dataset(
+        features=features,
+        targets=np.asarray(["healthy", "fault"] * 4),
+        groups=np.asarray([f"B{index}" for index in range(8)]),
+        conditions=np.asarray(["A"] * 4 + ["B"] * 4),
+        sequence_indices=np.arange(8, dtype=np.int64),
+        feature_names=names,
+        dataset_name="paderborn",
+        dataset_version="fixture-v1",
+        config_sha="a" * 64,
+        processed_sha256="b" * 64,
+    )
+    train_indices = np.asarray([0, 1, 2, 3, 4, 5])
+    validation_indices = np.asarray([6, 7])
+    damaged = np.asarray([0, 1, 0, 1, 0, 1, 0, 1])
+    train, validation, output_names = fault_fold_matrices(
+        dataset, "F3", train_indices, validation_indices, damaged
+    )
+    mean = np.mean(train, axis=0)
+    scale = np.std(train, axis=0)
+    scale[scale == 0] = 1.0
+
+    preprocessor = PaderbornFaultV2Preprocessor.fit(
+        dataset, "F3", train_indices, damaged
+    )
+
+    np.testing.assert_allclose(
+        preprocessor.transform(dataset, train_indices), (train - mean) / scale
+    )
+    np.testing.assert_allclose(
+        preprocessor.transform(dataset, validation_indices),
+        (validation - mean) / scale,
+    )
+    assert preprocessor.output_feature_names == output_names
 
 
 def test_causal_multiscale_context_cannot_see_future_values() -> None:

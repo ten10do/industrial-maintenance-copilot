@@ -197,6 +197,102 @@ def condition_normalized_matrices(
     return transform(train_indices), transform(validation_indices), normalized_names
 
 
+@dataclass(slots=True)
+class PaderbornFaultV2Preprocessor:
+    """Serializable final-candidate transform fitted on Development rows only."""
+
+    family: FaultFamily
+    base_feature_names: tuple[str, ...]
+    condition_feature_names: tuple[str, ...]
+    pooled_center: NDArray[np.float64]
+    pooled_scale: NDArray[np.float64]
+    condition_baselines: dict[str, tuple[NDArray[np.float64], NDArray[np.float64]]]
+    scaler_mean: NDArray[np.float64]
+    scaler_scale: NDArray[np.float64]
+    output_feature_names: tuple[str, ...]
+
+    @classmethod
+    def fit(
+        cls,
+        dataset: V2Dataset,
+        family: FaultFamily,
+        train_indices: NDArray[np.int_],
+        damaged: NDArray[np.int_],
+    ) -> PaderbornFaultV2Preprocessor:
+        base_names = fault_family_feature_names(dataset, family)
+        condition_names = (
+            tuple(name for name in _CONDITION_FEATURES if name in dataset.feature_names)
+            if family in {"F2", "F3", "F4"}
+            else ()
+        )
+        pooled_center: NDArray[np.float64]
+        pooled_scale: NDArray[np.float64]
+        condition_baselines: dict[
+            str, tuple[NDArray[np.float64], NDArray[np.float64]]
+        ] = {}
+        if condition_names:
+            values = dataset.columns(condition_names)
+            healthy_train = train_indices[damaged[train_indices] == 0]
+            if not len(healthy_train):
+                raise ValueError("fault train fold has no healthy rows")
+            pooled = _median_iqr(values[healthy_train])
+            pooled_center = pooled[0]
+            pooled_scale = pooled[1]
+            for condition in np.unique(dataset.conditions[train_indices]):
+                selected = healthy_train[dataset.conditions[healthy_train] == condition]
+                if len(selected):
+                    condition_baselines[str(condition)] = _median_iqr(values[selected])
+        else:
+            pooled_center = np.empty(0, dtype=np.float64)
+            pooled_scale = np.empty(0, dtype=np.float64)
+        normalized_names = tuple(
+            f"condition_normalized_{name}" for name in condition_names
+        )
+        provisional = cls(
+            family=family,
+            base_feature_names=base_names,
+            condition_feature_names=condition_names,
+            pooled_center=pooled_center,
+            pooled_scale=pooled_scale,
+            condition_baselines=condition_baselines,
+            scaler_mean=np.empty(0, dtype=np.float64),
+            scaler_scale=np.empty(0, dtype=np.float64),
+            output_feature_names=(*base_names, *normalized_names),
+        )
+        train = provisional._unscaled(dataset, train_indices)
+        mean = np.mean(train, axis=0)
+        scale = np.std(train, axis=0)
+        scale[scale == 0] = 1.0
+        provisional.scaler_mean = mean
+        provisional.scaler_scale = scale
+        return provisional
+
+    def transform(
+        self, dataset: V2Dataset, indices: NDArray[np.int_]
+    ) -> NDArray[np.float64]:
+        if not len(self.scaler_mean) or not len(self.scaler_scale):
+            raise ValueError("Paderborn V2 preprocessor has not been fitted")
+        return (self._unscaled(dataset, indices) - self.scaler_mean) / self.scaler_scale
+
+    def _unscaled(
+        self, dataset: V2Dataset, indices: NDArray[np.int_]
+    ) -> NDArray[np.float64]:
+        base = dataset.columns(self.base_feature_names)[indices]
+        if not self.condition_feature_names:
+            return base
+        values = dataset.columns(self.condition_feature_names)
+        normalized = np.empty(
+            (len(indices), len(self.condition_feature_names)), dtype=np.float64
+        )
+        for condition in np.unique(dataset.conditions[indices]):
+            positions = np.flatnonzero(dataset.conditions[indices] == condition)
+            center, scale = self.condition_baselines.get(
+                str(condition), (self.pooled_center, self.pooled_scale)
+            )
+            normalized[positions] = (values[indices[positions]] - center) / scale
+        return np.column_stack([base, normalized])
+
+
 def rul_family_feature_names(dataset: V2Dataset, family: RulFamily) -> tuple[str, ...]:
     v1 = tuple(
         definition.name
