@@ -246,7 +246,7 @@ def _evaluate_family(
             }
         )
     if not np.isfinite(oof).all():
-        raise ValueError("LOBO did not produce one prediction for every XJTU row")
+        raise ValueError("grouped outer CV did not predict every XJTU row exactly once")
     raw_metrics = evaluate_rul(targets, oof)
     raw_trajectories = _prediction_trajectories(dataset, oof)
     raw_stability = trajectory_metrics(raw_trajectories)
