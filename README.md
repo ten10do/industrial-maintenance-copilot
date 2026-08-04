@@ -263,6 +263,26 @@ model artifacts are not committed. See
 official dataset sources, license constraints, reproducible workflow, and current
 limitations.
 
+### Predictive Model Research
+
+- V1 established the reproducible, group-safe data, artifact, registry, and
+  inference pipeline; real datasets and trained artifacts remain local and are
+  excluded from Git.
+- V2's selected Paderborn Fault candidate reached 0.7904 Development OOF macro
+  recall and 0.9867 on its single preregistered Frozen Test. That test contains
+  only six independent bearings (one healthy), with correlated windows on a
+  controlled rig, so the result permits staging research only and is not evidence
+  of fleet or production readiness.
+- XJTU-SY cross-bearing RUL experiments did not meet the promotion gates; no RUL
+  model was registered or promoted.
+- Reproduction requires separately authorized local copies of the official
+  datasets. Training regenerates ignored local caches and model artifacts; no
+  raw dataset, processed array, database, or `joblib` artifact is committed.
+
+See the [V2 final-test forensics](docs/ml-experiments/v2/final-test-forensics.md)
+and [staging safety audit](docs/ml-experiments/v2/staging-safety-audit.md) for the
+evidence and interpretation boundaries.
+
 ## Roadmap
 
 - 对象存储与附件持久化
