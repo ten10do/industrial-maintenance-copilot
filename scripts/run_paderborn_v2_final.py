@@ -140,7 +140,7 @@ def main() -> None:
     artifact_relative_path: str | None = None
     if final_passed:
         model_version = f"paderborn-fault-v2-{datetime.now(UTC):%Y%m%dT%H%M%SZ}"
-        artifact_dir = args.artifact_root / model_version
+        artifact_dir = args.artifact_root.resolve() / model_version
         artifact_sha = save_artifact_bundle(
             artifact_dir,
             model=model,
