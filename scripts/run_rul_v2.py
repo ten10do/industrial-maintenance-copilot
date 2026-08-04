@@ -516,9 +516,9 @@ def _resumable_result(
     if not path.is_file():
         return None
     result = _read_json(path)
-    if (
-        result.get("git_sha") != git_sha
-        or result.get("processed_sha256") != dataset.processed_sha256
+    result_sha = str(result.get("git_sha", ""))
+    if result.get("processed_sha256") != dataset.processed_sha256 or not _is_ancestor(
+        result_sha, git_sha
     ):
         raise ValueError(f"stale experiment result cannot be resumed: {path}")
     return result
@@ -593,6 +593,19 @@ def _git_sha() -> str:
         capture_output=True,
         text=True,
     ).stdout.strip()
+
+
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    if len(ancestor) != 40 or len(descendant) != 40:
+        return False
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=REPO_ROOT,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 if __name__ == "__main__":

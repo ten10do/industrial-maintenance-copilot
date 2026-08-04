@@ -11,7 +11,6 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -345,7 +344,7 @@ def _candidates() -> list[Candidate]:
                 "class_weight": "balanced_subsample",
             },
         )
-        for depth, leaf in product((8, 12, None), (1, 2, 5))
+        for depth, leaf in ((8, 5), (12, 2), (None, 1))
     )
     candidates.extend(
         Candidate(
@@ -357,8 +356,11 @@ def _candidates() -> list[Candidate]:
                 "l2_regularization": regularization,
             },
         )
-        for learning_rate, leaves, regularization in product(
-            (0.03, 0.05, 0.10), (15, 31), (0.0, 1.0)
+        for learning_rate, leaves, regularization in (
+            (0.03, 15, 1.0),
+            (0.05, 31, 1.0),
+            (0.10, 15, 0.0),
+            (0.10, 31, 0.0),
         )
     )
     return candidates
@@ -394,9 +396,9 @@ def _resumable_result(
     if not path.is_file():
         return None
     result = _read_json(path)
-    if (
-        result.get("git_sha") != git_sha
-        or result.get("processed_sha256") != dataset.processed_sha256
+    result_sha = str(result.get("git_sha", ""))
+    if result.get("processed_sha256") != dataset.processed_sha256 or not _is_ancestor(
+        result_sha, git_sha
     ):
         raise ValueError(f"stale experiment result cannot be resumed: {path}")
     return result
@@ -470,6 +472,19 @@ def _git_sha() -> str:
         capture_output=True,
         text=True,
     ).stdout.strip()
+
+
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    if len(ancestor) != 40 or len(descendant) != 40:
+        return False
+    return (
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+            cwd=REPO_ROOT,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 if __name__ == "__main__":

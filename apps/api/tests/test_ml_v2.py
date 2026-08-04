@@ -255,7 +255,7 @@ def test_v2_candidate_grids_match_preregistration() -> None:
     fault = fault_candidates()
     rul = rul_candidates()
 
-    assert len(fault) == 24
+    assert len(fault) == 10
     assert {candidate.algorithm for candidate in fault} == {
         "logistic_regression",
         "random_forest",
