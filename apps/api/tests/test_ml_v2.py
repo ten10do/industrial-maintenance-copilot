@@ -261,7 +261,7 @@ def test_v2_candidate_grids_match_preregistration() -> None:
         "random_forest",
         "hist_gradient_boosting",
     }
-    assert len(rul) == 23
+    assert len(rul) == 10
     assert {candidate.algorithm for candidate in rul} == {
         "ridge",
         "random_forest",

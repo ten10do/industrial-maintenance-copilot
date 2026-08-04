@@ -9,7 +9,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from itertools import product
 from pathlib import Path
 from typing import Any
 
@@ -407,43 +406,60 @@ def _regressor(candidate: Candidate, jobs: int) -> Any:
 
 
 def _candidates() -> list[Candidate]:
-    candidates = [Candidate("ridge", {"alpha": value}) for value in (0.1, 1.0, 10.0)]
-    for algorithm in ("random_forest", "extra_trees"):
-        candidates.extend(
-            Candidate(
-                algorithm,
-                {
-                    "n_estimators": 300,
-                    "max_depth": depth,
-                    "min_samples_leaf": leaf,
-                },
-            )
-            for depth, leaf in product((8, 12), (1, 3))
-        )
+    candidates = [Candidate("ridge", {"alpha": alpha}) for alpha in (0.1, 1.0)]
     candidates.extend(
         Candidate(
-            "gradient_boosting",
+            algorithm,
             {
-                "n_estimators": estimators,
-                "learning_rate": learning_rate,
-                "max_depth": 2,
+                "n_estimators": 300,
+                "max_depth": depth,
+                "min_samples_leaf": leaf,
             },
         )
-        for estimators, learning_rate in product((100, 200), (0.03, 0.05))
+        for algorithm, depth, leaf in (
+            ("random_forest", 8, 3),
+            ("random_forest", 12, 1),
+            ("extra_trees", 8, 3),
+            ("extra_trees", 12, 1),
+        )
     )
     candidates.extend(
-        Candidate(
-            "hist_gradient_boosting",
-            {
-                "max_iter": 150,
-                "learning_rate": learning_rate,
-                "max_leaf_nodes": leaves,
-                "l2_regularization": regularization,
-            },
-        )
-        for learning_rate, leaves, regularization in product(
-            (0.03, 0.05), (15, 31), (0.0, 1.0)
-        )
+        [
+            Candidate(
+                "gradient_boosting",
+                {
+                    "n_estimators": 100,
+                    "learning_rate": 0.05,
+                    "max_depth": 2,
+                },
+            ),
+            Candidate(
+                "gradient_boosting",
+                {
+                    "n_estimators": 200,
+                    "learning_rate": 0.03,
+                    "max_depth": 2,
+                },
+            ),
+            Candidate(
+                "hist_gradient_boosting",
+                {
+                    "max_iter": 150,
+                    "learning_rate": 0.03,
+                    "max_leaf_nodes": 15,
+                    "l2_regularization": 0.0,
+                },
+            ),
+            Candidate(
+                "hist_gradient_boosting",
+                {
+                    "max_iter": 150,
+                    "learning_rate": 0.05,
+                    "max_leaf_nodes": 31,
+                    "l2_regularization": 1.0,
+                },
+            ),
+        ]
     )
     return candidates
 
