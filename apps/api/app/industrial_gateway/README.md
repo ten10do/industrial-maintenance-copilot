@@ -3,39 +3,44 @@
 OPC UA 只读遥测接入层：把 `OPC UA Device Layer → Gateway → Telemetry → AI 平台`
 接入既有智能运维平台，**不旁路任何 AI 能力，不修改任何业务逻辑**。
 
+支持两种并行的数据触发方式（共享同一质量层与 AI 链路）：
+
+- **Polling**：周期性 `read_node`（`opcua/client.py`，既有能力）；
+- **Subscription**：DataChange 事件驱动（`opcua/subscription.py` +
+  `event_buffer.py`），轮询作为订阅不可用时的 fallback。
+
 ## 结构
 
 ```
 industrial_gateway/
 ├── opcua/
-│   ├── client.py     # OpcUaClient 协议 + AsyncuaOpcUaClient / MockOpcUaClient
-│   ├── models.py     # NodeRead 等内部数据结构、StatusCode 质量归类
-│   └── service.py    # 轮询编排：读取 → 质量 → 映射聚合 → ingest_snapshot
+│   ├── client.py        # OpcUaClient 协议 + AsyncuaOpcUaClient / MockOpcUaClient（轮询）
+│   ├── subscription.py  # OpcUaSubscriptionClient 协议 + Asyncua / Mock（DataChange 订阅）
+│   ├── models.py        # NodeRead / NodeDataChange 等内部结构、StatusCode 质量归类
+│   └── service.py       # 编排：轮询 sync_once + 订阅 on_data_change → 缓冲 → flush → ingest
 ├── simulator/
-│   ├── generator.py  # 固定种子确定性电机仿真（normal/warning/fault）
+│   ├── generator.py     # 固定种子确定性电机仿真（normal/warning/fault + 变更检测）
 │   └── opcua_server.py  # 软件 OPC UA Server（asyncua），可执行 CLI
-├── gateway.py        # GatewayConfig / 客户端工厂
-├── mapping.py        # NodeId ↔ 设备资产映射（DB 表 + YAML 配置）
-├── models.py         # GatewayConnection / OpcUaNodeMapping
-├── quality.py        # Data Quality Layer（缺失/坏质量/时间戳/单位/去重）
-└── schemas.py        # API Pydantic 模型
+├── gateway.py           # GatewayConfig / 轮询与订阅客户端工厂
+├── event_buffer.py      # Event Buffer：batch aggregation + debounce + duplicate suppression
+├── alarms.py            # 报警状态机 NORMAL/WARNING/CRITICAL
+├── mapping.py           # NodeId ↔ 设备资产映射（DB 表 + YAML 配置）
+├── models.py            # GatewayConnection / OpcUaNodeMapping / GatewaySubscription / IndustrialAlarm
+├── quality.py           # Data Quality Layer（缺失/坏质量/时间戳/单位/去重）
+└── schemas.py           # API Pydantic 模型
 ```
 
 ## 数据流
 
 ```
-OPC UA Server（模拟器或现场设备）
-   │  opc.tcp（只读）
-   ▼
-OpcUaClient.read_node() → NodeRead{value, source_timestamp, status_code}
-   ▼
-DataQualityLayer.process()      # 不合格数据在此被拒绝，绝不进入业务
-   ▼
-NodeMapping（equipment_id + metric + unit + scale/offset）
-   ▼
+【轮询】OPC UA Server → read_node() → DataQualityLayer → NodeMapping
+【订阅】OPC UA Server → DataChange → on_data_change（mapping + 单事件质量闸门）
+        → EventBuffer（debounce/batch/dedupe）→ flush 时从最新值缓存构建快照
+        ▼
 TelemetrySnapshot（scenario="opcua" 标记来源）
    ▼
-intelligence_service.ingest_snapshot()   # 复用既有 AI 链路
+intelligence_service.ingest_snapshot()   # 复用既有 AI 链路（无第二套 pipeline）
+   └─ 订阅 flush 路径附带工业报警状态机 → industrial_alarms
 ```
 
 ## 运行模式
