@@ -1,0 +1,52 @@
+# OPC UA 节点 → 平台设备资产映射（演示配置）。
+#
+# 说明：
+# - equipment_code 必须与平台“设备资产中心”中的设备编码一致；
+# - metric 使用友好名：temperature / vibration / current / voltage /
+#   speed / load / ambient_temperature / running / alarm；
+# - running、alarm 为 informational 节点：仅展示，不进入遥测快照；
+# - 修改本文件后调用 POST /api/v1/gateway/mappings/reload 重新加载，
+#   数据库表 opcua_node_mappings 是运行时唯一事实来源。
+
+mappings:
+  - node_id: "ns=2;s=Motor001.Temperature"
+    equipment_code: "EQ-MTR01"
+    metric: "temperature"
+    unit: "celsius"
+
+  - node_id: "ns=2;s=Motor001.Vibration"
+    equipment_code: "EQ-MTR01"
+    metric: "vibration"
+    unit: "mm/s"
+
+  - node_id: "ns=2;s=Motor001.Current"
+    equipment_code: "EQ-MTR01"
+    metric: "current"
+    unit: "A"
+
+  - node_id: "ns=2;s=Motor001.Speed"
+    equipment_code: "EQ-MTR01"
+    metric: "speed"
+    unit: "rpm"
+
+  - node_id: "ns=2;s=Motor001.Voltage"
+    equipment_code: "EQ-MTR01"
+    metric: "voltage"
+    unit: "V"
+
+  - node_id: "ns=2;s=Motor001.LoadRatio"
+    equipment_code: "EQ-MTR01"
+    metric: "load"
+    unit: "%"
+
+  - node_id: "ns=2;s=Motor001.RunningState"
+    equipment_code: "EQ-MTR01"
+    metric: "running"
+    unit: ""
+    informational: true
+
+  - node_id: "ns=2;s=Motor001.Alarm"
+    equipment_code: "EQ-MTR01"
+    metric: "alarm"
+    unit: ""
+    informational: true

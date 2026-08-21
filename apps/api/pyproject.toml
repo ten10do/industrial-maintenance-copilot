@@ -33,6 +33,7 @@ files = [
   "app/db/alembic.py",
   "app/db/migrations.py",
   "app/gateways",
+  "app/industrial_gateway",
   "app/models/intelligence.py",
   "app/models/ml.py",
   "app/ml",
@@ -46,5 +47,10 @@ files = [
 ]
 
 [[tool.mypy.overrides]]
-module = ["joblib", "scipy.*", "sklearn.*"]
+module = ["joblib", "scipy.*", "sklearn.*", "asyncua.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# asyncua 未在 __all__ 中显式导出 Client，按动态模块处理（返回 Any）。
+module = ["asyncua.*"]
+follow_imports = "skip"

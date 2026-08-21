@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # 高风险命令超过此时间仍无结果时，转为人工核验。
     EQUIPMENT_COMMAND_TIMEOUT_SECONDS: int = Field(default=300, ge=30, le=3600)
 
+    # 工业协议网关（OPC UA，只读遥测接入）。默认关闭，不影响既有 Mock 链路。
+    GATEWAY_ENABLED: bool = False
+    GATEWAY_MODE: str = "mock"  # mock：进程内模拟客户端；opcua：真实 OPC UA 连接
+    GATEWAY_ENDPOINT: str = ""  # 留空使用各模式默认端点
+    GATEWAY_POLL_INTERVAL_SECONDS: float = Field(default=5.0, ge=1.0)
+    GATEWAY_AUTO_INGEST: bool = True
+    GATEWAY_MAPPING_CONFIG: str = "configs/opcua-node-mapping.yaml"
+    GATEWAY_TIMEOUT_SECONDS: float = Field(default=4.0, ge=1.0)
+
     # 存储
     STORAGE_TYPE: str = "local"
     STORAGE_LOCAL_DIR: str = "./uploads"
