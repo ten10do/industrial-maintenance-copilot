@@ -1,11 +1,12 @@
-"""工业网关数据库模型：连接配置与节点映射。
+"""工业网关数据库模型：连接配置、节点映射与订阅。
 
 新增表：
 
 - ``gateway_connections``：网关连接（协议、端点、状态、最近连接时间）。
 - ``opcua_node_mappings``：OPC UA NodeId → 平台设备资产 + 指标映射。
+- ``gateway_subscriptions``：DataChange 订阅（事件驱动接入，只读）。
 
-两表均为追加式新增，不修改任何既有业务表。
+均为追加式新增，不修改任何既有业务表。
 """
 
 from __future__ import annotations
@@ -88,3 +89,28 @@ class OpcUaNodeMapping(TimestampMixin, Base):
     informational: Mapped[bool] = mapped_column(Boolean, default=False)
 
     equipment: Mapped[Equipment] = relationship()
+
+
+class GatewaySubscription(TimestampMixin, Base):
+    """OPC UA DataChange 订阅（事件驱动接入，只读）。"""
+
+    __tablename__ = "gateway_subscriptions"
+    __table_args__ = (
+        UniqueConstraint(
+            "gateway_id",
+            "node_id",
+            name="uq_gateway_subscription_gateway_node",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    gateway_id: Mapped[int] = mapped_column(
+        ForeignKey("gateway_connections.id", ondelete="CASCADE"), index=True
+    )
+    node_id: Mapped[str] = mapped_column(String(160), index=True)
+    sampling_interval: Mapped[float] = mapped_column(Float, default=1000.0)
+    status: Mapped[str] = mapped_column(String(24), default="inactive", index=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    event_count: Mapped[int] = mapped_column(Integer, default=0)

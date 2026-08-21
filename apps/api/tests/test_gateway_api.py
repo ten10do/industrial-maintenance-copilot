@@ -139,7 +139,11 @@ def test_gateway_sync_forbidden_for_technician(
 
 
 def test_gateway_exposes_no_write_endpoints(client):
-    """安全：网关 API 面上不允许出现任何写 PLC 的端点。"""
+    """安全：网关 API 面上不允许出现任何写 PLC 的端点。
+
+    订阅 start/stop 是网关自身的运行控制，不是设备写操作；
+    任何 PUT/DELETE/PATCH 以及面向节点值的写端点都被禁止。
+    """
     schema = client.get("/openapi.json").json()
     gateway_paths = {
         path: methods
@@ -152,6 +156,11 @@ def test_gateway_exposes_no_write_endpoints(client):
         "/api/v1/gateway/test-connect",
         "/api/v1/gateway/sync",
         "/api/v1/gateway/mappings/reload",
+        "/api/v1/gateway/subscriptions",
+        "/api/v1/gateway/subscriptions/start",
+        "/api/v1/gateway/subscriptions/stop",
     }
     for _path, methods in gateway_paths.items():
         assert not ({"put", "delete", "patch"} & set(methods))
+    # 不存在面向 NodeId 值的写端点。
+    assert not any("write" in path for path in gateway_paths)

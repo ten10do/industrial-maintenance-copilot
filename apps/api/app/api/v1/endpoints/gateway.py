@@ -12,13 +12,17 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, supervisor_or_admin
 from app.db.session import get_db
+from app.industrial_gateway.models import GatewaySubscription
 from app.industrial_gateway.opcua.service import get_gateway_runtime
 from app.industrial_gateway.schemas import (
     GatewayConnectionOut,
     GatewayNodesOut,
     GatewayStatusOut,
+    GatewaySubscriptionRowOut,
     GatewaySyncOut,
     MappingReloadOut,
+    SubscriptionActionOut,
+    SubscriptionStatusOut,
     TestConnectOut,
 )
 from app.models.user import User
@@ -91,3 +95,60 @@ def reload_mappings(
     """从 YAML 配置重新装载节点映射（按 node_id 幂等 upsert）。"""
     runtime = get_gateway_runtime()
     return MappingReloadOut(**runtime.reload_mappings(db))
+
+
+@router.get("/subscriptions", response_model=SubscriptionStatusOut)
+def subscription_status(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> SubscriptionStatusOut:
+    """查看 DataChange 订阅状态：active nodes / sampling interval / 事件计数。"""
+    runtime = get_gateway_runtime()
+    runtime.ensure_seed(db)
+    status = runtime.subscription_status()
+    connection = runtime.ensure_connection_row(db)
+    rows = (
+        db.query(GatewaySubscription)
+        .filter(GatewaySubscription.gateway_id == connection.id)
+        .order_by(GatewaySubscription.node_id)
+        .all()
+    )
+    return SubscriptionStatusOut(
+        ok=True,
+        status=status["subscription_status"],
+        rows=[GatewaySubscriptionRowOut.model_validate(row) for row in rows],
+        **status,
+    )
+
+
+@router.post("/subscriptions/start", response_model=SubscriptionActionOut)
+async def start_subscriptions(
+    db: Session = Depends(get_db),
+    _user: User = Depends(supervisor_or_admin),
+) -> SubscriptionActionOut:
+    """启动 DataChange 订阅（事件驱动接入，只读）。"""
+    runtime = get_gateway_runtime()
+    result = await runtime.start_subscription(db)
+    detail = {
+        k: v
+        for k, v in result.items()
+        if k not in {"ok", "status", "already_active", "error"}
+    }
+    return SubscriptionActionOut(
+        ok=result["ok"],
+        status=result["status"],
+        already_active=result.get("already_active", False),
+        error=result.get("error"),
+        detail=detail,
+    )
+
+
+@router.post("/subscriptions/stop", response_model=SubscriptionActionOut)
+async def stop_subscriptions(
+    db: Session = Depends(get_db),
+    _user: User = Depends(supervisor_or_admin),
+) -> SubscriptionActionOut:
+    """停止 DataChange 订阅（轮询能力保持可用）。"""
+    runtime = get_gateway_runtime()
+    result = await runtime.stop_subscription(db)
+    return SubscriptionActionOut(ok=result["ok"], status=result["status"])

@@ -82,3 +82,41 @@ class GatewayStatusOut(BaseModel):
     enabled: bool
     read_only: bool = True
     seed_error: str | None = None
+
+
+# ============ OPC UA DataChange 订阅（事件驱动，只读） ============
+
+
+class GatewaySubscriptionRowOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    gateway_id: int
+    node_id: str
+    sampling_interval: float
+    status: str
+    last_event_at: datetime | None
+    event_count: int
+
+
+class SubscriptionStatusOut(BaseModel):
+    ok: bool = True
+    status: str
+    subscription_status: str
+    sampling_interval_ms: float
+    active_nodes: list[str] = []
+    buffer_pending: int = 0
+    event_totals: dict[str, int] = {}
+    last_event_at: str | None = None
+    last_event: str | None = None
+    error: str | None = None
+    read_only: bool = True
+    rows: list[GatewaySubscriptionRowOut] = []
+
+
+class SubscriptionActionOut(BaseModel):
+    ok: bool
+    status: str
+    already_active: bool = False
+    error: str | None = None
+    detail: dict[str, Any] = {}
