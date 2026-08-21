@@ -1,8 +1,8 @@
 """文件存储抽象层：默认本地存储，可扩展 S3/OSS/MinIO。"""
+
 from __future__ import annotations
 
 import os
-import shutil
 import uuid
 from pathlib import Path
 

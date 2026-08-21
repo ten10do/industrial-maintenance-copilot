@@ -43,6 +43,7 @@ from app.models.workorder import (
     WorkOrderChecklistItem,
     WorkOrderStatusHistory,
 )
+from app.services.work_order_codes import generate_work_order_code
 
 
 @dataclass(slots=True)
@@ -965,7 +966,7 @@ def _create_predictive_work_order(
         else datetime.now(UTC) + timedelta(hours=8)
     )
     work_order = WorkOrder(
-        code=_next_work_order_code(db),
+        code=generate_work_order_code(),
         title=f"[预测性维护] {anomaly.title}",
         equipment_id=equipment.id,
         fault_description=(
@@ -1058,12 +1059,6 @@ def _create_operation_approval(
 
 def anomaly_reason(assessment: TelemetryAssessment) -> str:
     return f"{assessment.title or '设备异常'}：{', '.join(assessment.anomaly_metrics)}"
-
-
-def _next_work_order_code(db: Session) -> str:
-    year = datetime.now(UTC).year
-    count = db.query(WorkOrder).filter(WorkOrder.code.like(f"WO-{year}-%")).count()
-    return f"WO-{year}-{count + 1:04d}"
 
 
 def _record_health_score(record: TelemetryRecord | None) -> float:

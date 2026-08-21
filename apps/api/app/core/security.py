@@ -1,8 +1,9 @@
 """安全工具：密码哈希与 JWT 签发/校验。"""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import bcrypt
 import jwt
@@ -23,8 +24,8 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
-def create_access_token(subject: str | int, extra: Optional[dict[str, Any]] = None) -> str:
-    now = datetime.now(timezone.utc)
+def create_access_token(subject: str | int, extra: dict[str, Any] | None = None) -> str:
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload: dict[str, Any] = {
         "sub": str(subject),

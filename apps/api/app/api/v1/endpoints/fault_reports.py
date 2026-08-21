@@ -1,21 +1,30 @@
 """故障上报接口。"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.ai.copilot import parse_fault as ai_parse_fault
 from app.core.deps import get_current_user, supervisor_or_admin
-from app.core.exceptions import bad_request, conflict, not_found, paginate
+from app.core.exceptions import bad_request, not_found, paginate
 from app.db.session import get_db
-from app.models.base import FaultReportStatusEnum, PriorityEnum, UrgencyEnum, WorkOrderStatusEnum, WorkOrderTypeEnum
-from app.models.equipment import Equipment
+from app.models.base import (
+    FaultReportStatusEnum,
+    PriorityEnum,
+    UrgencyEnum,
+    WorkOrderStatusEnum,
+    WorkOrderTypeEnum,
+)
 from app.models.fault import FaultReport
-from app.models.user import User
-from app.models.workorder import WorkOrder, WorkOrderChecklistItem, WorkOrderStatusHistory
-from app.schemas.common import OkResponse, PageOut
+from app.models.workorder import (
+    WorkOrder,
+    WorkOrderChecklistItem,
+    WorkOrderStatusHistory,
+)
+from app.schemas.common import PageOut
 from app.schemas.fault import (
     ConvertToWorkOrderRequest,
     ConvertToWorkOrderResponse,
@@ -25,6 +34,7 @@ from app.schemas.fault import (
     ParseFaultRequest,
     ParseFaultResult,
 )
+from app.services.work_order_codes import generate_work_order_code
 
 router = APIRouter(prefix="/fault-reports", tags=["fault-reports"])
 
@@ -55,38 +65,39 @@ def _urgency_to_priority(urgency: UrgencyEnum) -> PriorityEnum:
     return mapping.get(urgency, PriorityEnum.P3)
 
 
-def _enforce_minimum_priority(requested: PriorityEnum, fault_report: FaultReport) -> PriorityEnum:
+def _enforce_minimum_priority(
+    requested: PriorityEnum, fault_report: FaultReport
+) -> PriorityEnum:
     """安全规则：不得低于业务要求的优先级。"""
     if fault_report.has_safety_risk:
-        priority_order = {PriorityEnum.P1: 1, PriorityEnum.P2: 2, PriorityEnum.P3: 3, PriorityEnum.P4: 4}
+        priority_order = {
+            PriorityEnum.P1: 1,
+            PriorityEnum.P2: 2,
+            PriorityEnum.P3: 3,
+            PriorityEnum.P4: 4,
+        }
         if priority_order.get(requested, 3) > 2:
             return PriorityEnum.P2
     if fault_report.is_downtime and fault_report.affects_production:
-        priority_order = {PriorityEnum.P1: 1, PriorityEnum.P2: 2, PriorityEnum.P3: 3, PriorityEnum.P4: 4}
+        priority_order = {
+            PriorityEnum.P1: 1,
+            PriorityEnum.P2: 2,
+            PriorityEnum.P3: 3,
+            PriorityEnum.P4: 4,
+        }
         if priority_order.get(requested, 3) > 2:
             return PriorityEnum.P2
     return requested
 
 
-def _gen_code(db: Session) -> str:
-    year = datetime.now(timezone.utc).year
-    count = db.query(WorkOrder).filter(WorkOrder.code.like(f"WO-{year}-%")).count()
-    return f"WO-{year}-{count + 1:04d}"
-
-
-def _to_out(db: Session, fr: FaultReport) -> FaultReportOut:
-    eq_name = eq_code = None
-    if fr.equipment_id:
-        eq = db.get(Equipment, fr.equipment_id)
-        if eq:
-            eq_name, eq_code = eq.name, eq.code
-    # Find related work order
-    related_wo = db.query(WorkOrder).filter(WorkOrder.fault_report_id == fr.id).first()
+def _to_out(
+    fr: FaultReport, related_work_order_id: int | None = None
+) -> FaultReportOut:
     return FaultReportOut(
         id=fr.id,
         equipment_id=fr.equipment_id,
-        equipment_name=eq_name,
-        equipment_code=eq_code,
+        equipment_name=fr.equipment.name if fr.equipment else None,
+        equipment_code=fr.equipment.code if fr.equipment else None,
         title=fr.title,
         description=fr.description,
         occurred_at=fr.occurred_at,
@@ -103,19 +114,15 @@ def _to_out(db: Session, fr: FaultReport) -> FaultReportOut:
         parsed_fields=fr.parsed_fields,
         fault_code_id=fr.fault_code_id,
         created_at=fr.created_at,
-        related_work_order_id=related_wo.id if related_wo else None,
+        related_work_order_id=related_work_order_id,
     )
 
 
 def _to_detail(db: Session, fr: FaultReport) -> FaultReportDetail:
-    out = _to_out(db, fr)
-    related_work_order_code = None
-    related_work_order_status = None
-    if out.related_work_order_id:
-        wo = db.get(WorkOrder, out.related_work_order_id)
-        if wo:
-            related_work_order_code = wo.code
-            related_work_order_status = wo.status.value if wo.status else None
+    related_work_order = (
+        db.query(WorkOrder).filter(WorkOrder.fault_report_id == fr.id).first()
+    )
+    out = _to_out(fr, related_work_order.id if related_work_order is not None else None)
     return FaultReportDetail(
         id=out.id,
         equipment_id=out.equipment_id,
@@ -138,8 +145,14 @@ def _to_detail(db: Session, fr: FaultReport) -> FaultReportDetail:
         fault_code_id=out.fault_code_id,
         created_at=out.created_at,
         related_work_order_id=out.related_work_order_id,
-        related_work_order_code=related_work_order_code,
-        related_work_order_status=related_work_order_status,
+        related_work_order_code=(
+            related_work_order.code if related_work_order is not None else None
+        ),
+        related_work_order_status=(
+            related_work_order.status.value
+            if related_work_order is not None and related_work_order.status
+            else None
+        ),
     )
 
 
@@ -151,26 +164,45 @@ def list_reports(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    q = db.query(FaultReport)
+    q = db.query(FaultReport).options(joinedload(FaultReport.equipment))
     if status:
         q = q.filter(FaultReport.status == status)
     q = q.order_by(FaultReport.created_at.desc())
     items, total = paginate(q, page, page_size)
-    return PageOut(items=[_to_out(db, f) for f in items], total=total, page=page, page_size=page_size)
+    related_work_order_ids: dict[int, int] = {}
+    if items:
+        for fault_report_id, work_order_id in (
+            db.query(WorkOrder.fault_report_id, WorkOrder.id)
+            .filter(WorkOrder.fault_report_id.in_([item.id for item in items]))
+            .order_by(WorkOrder.id)
+            .all()
+        ):
+            if fault_report_id is not None:
+                related_work_order_ids.setdefault(fault_report_id, work_order_id)
+    return PageOut(
+        items=[_to_out(f, related_work_order_ids.get(f.id)) for f in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("", response_model=FaultReportOut)
-def create_report(payload: FaultReportCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def create_report(
+    payload: FaultReportCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     fr = FaultReport(
-        **payload.model_dump(exclude={'occurred_at', 'reporter_name'}),
-        occurred_at=payload.occurred_at or datetime.now(timezone.utc),
+        **payload.model_dump(exclude={"occurred_at", "reporter_name"}),
+        occurred_at=payload.occurred_at or datetime.now(UTC),
         reporter_name=payload.reporter_name or user.full_name,
         created_by=str(user.id),
     )
     db.add(fr)
     db.commit()
     db.refresh(fr)
-    return _to_out(db, fr)
+    return _to_out(fr)
 
 
 @router.get("/{fr_id}", response_model=FaultReportDetail)
@@ -182,12 +214,18 @@ def get_report(fr_id: int, db: Session = Depends(get_db), _=Depends(get_current_
 
 
 @router.post("/parse", response_model=ParseFaultResult)
-def parse_fault(payload: ParseFaultRequest, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def parse_fault(
+    payload: ParseFaultRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
     """自然语言解析为结构化故障字段（需用户确认后才会落库）。"""
     return ai_parse_fault(db, payload.text, user.id)
 
 
-@router.post("/{fr_id}/convert-to-work-order", response_model=ConvertToWorkOrderResponse)
+@router.post(
+    "/{fr_id}/convert-to-work-order", response_model=ConvertToWorkOrderResponse
+)
 def convert_to_work_order(
     fr_id: int,
     payload: ConvertToWorkOrderRequest = ConvertToWorkOrderRequest(),
@@ -225,7 +263,7 @@ def convert_to_work_order(
     # 6. 在事务中创建工单
     try:
         wo = WorkOrder(
-            code=_gen_code(db),
+            code=generate_work_order_code(),
             title=fr.title,
             equipment_id=fr.equipment_id,
             fault_report_id=fr.id,
@@ -265,15 +303,17 @@ def convert_to_work_order(
             )
 
         # 写入工单状态历史
-        now = datetime.now(timezone.utc)
-        db.add(WorkOrderStatusHistory(
-            work_order_id=wo.id,
-            from_status=None,
-            to_status=WorkOrderStatusEnum.pending_dispatch.value,
-            changed_by=user.id,
-            changed_at=now,
-            remark=payload.notes or "由故障上报转换创建",
-        ))
+        now = datetime.now(UTC)
+        db.add(
+            WorkOrderStatusHistory(
+                work_order_id=wo.id,
+                from_status=None,
+                to_status=WorkOrderStatusEnum.pending_dispatch.value,
+                changed_by=user.id,
+                changed_at=now,
+                remark=payload.notes or "由故障上报转换创建",
+            )
+        )
 
         # 7. 更新故障上报状态
         fr.status = FaultReportStatusEnum.converted

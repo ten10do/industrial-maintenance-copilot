@@ -147,6 +147,39 @@ async function completeAllChecklistItems(page: any) {
   }
 }
 
+async function completeSafetyChecklistItems(page: any) {
+  const group = page.locator('[data-testid="checklist-group-safety"]');
+  await expect(group).toBeVisible({ timeout: 10000 });
+  const checkboxes = group.locator('input[type="checkbox"]');
+  const count = await checkboxes.count();
+
+  for (let index = 0; index < count; index += 1) {
+    const checkbox = checkboxes.nth(index);
+    if (!(await checkbox.isChecked())) {
+      const updateResponse = page.waitForResponse(
+        (response: any) => response.request().method() === 'PUT' && response.url().includes('/checklist/'),
+      );
+      await checkbox.check({ force: true });
+      expect((await updateResponse).ok()).toBeTruthy();
+      await page.waitForLoadState('networkidle', { timeout: 10000 });
+    }
+  }
+}
+
+async function confirmHighRiskExecution(
+  page: any,
+  triggerText = '开始维修',
+  confirmationText = '确认安全措施并开始维修',
+) {
+  await page.locator(`button:has-text("${triggerText}")`).click({ force: true });
+  const panel = page.locator('[data-testid="high-risk-safety-confirmation"]');
+  await expect(panel).toBeVisible({ timeout: 5000 });
+  await panel.locator('input[type="checkbox"]').check();
+  await panel.locator('textarea').fill('已现场核对停机、能源隔离、LOTO 和个人防护措施');
+  await panel.getByRole('button', { name: confirmationText }).click();
+  await page.waitForLoadState('networkidle', { timeout: 10000 });
+}
+
 /**
  * Helper: add a maintenance log, labor entry, and spare part through the UI
  */
@@ -204,11 +237,9 @@ test.describe('工单完整生命周期', () => {
     // Verify status changed to "已接受"
     await expect(page.getByText('已接受', { exact: true })).toBeVisible({ timeout: 10000 });
 
-    // Click "开始维修"
-    const startBtn = page.locator('button:has-text("开始维修")');
-    await expect(startBtn).toBeVisible({ timeout: 5000 });
-    await startBtn.click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    // 完成安全检查，并将现场确认与“开始维修”原子提交
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     // Verify status changed to "处理中"
     await expect(page.getByText('处理中', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -289,8 +320,8 @@ test.describe('完工条件不足验证', () => {
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Start
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     await expect(page.getByText('处理中', { exact: true })).toBeVisible({ timeout: 10000 });
 
@@ -314,8 +345,8 @@ test.describe('完工条件不足验证', () => {
 
     await page.locator('[data-testid="accept-work-order-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     // Fill submit form (to pass frontend validation)
     await fillSubmitForm(page);
@@ -356,8 +387,8 @@ test.describe('验收驳回到重新处理流程', () => {
     // Accept → Start
     await page.locator('[data-testid="accept-work-order-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     // Complete checklist, add logs/labor
     await completeAllChecklistItems(page);
@@ -410,8 +441,7 @@ test.describe('验收驳回到重新处理流程', () => {
     // Verify "重新处理" button is visible
     const redoBtn = page.locator('button:has-text("重新处理")');
     await expect(redoBtn).toBeVisible({ timeout: 5000 });
-    await redoBtn.click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await confirmHighRiskExecution(page, '重新处理');
 
     // Verify back to "处理中"
     await expect(page.getByText('处理中', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -512,8 +542,8 @@ test.describe('权限隔离验证', () => {
 
     await page.locator('[data-testid="accept-work-order-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     await completeAllChecklistItems(page);
     await addMaintenanceRecords(page);

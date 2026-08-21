@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, LockKeyhole, ShieldAlert, XCircle } from 'lucide-react';
+import { CheckCircle2, LockKeyhole, SearchCheck, ShieldAlert, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { approveOperation, listOperationApprovals, rejectOperation } from '@/lib/api';
+import { approveOperation, listOperationApprovals, reconcileOperation, rejectOperation } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 
 const COMMAND_LABELS: Record<string, string> = {
@@ -18,15 +18,18 @@ const COMMAND_LABELS: Record<string, string> = {
 export default function ApprovalsPage() {
   const { user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
-  const [filter, setFilter] = useState('pending');
+  const [filter, setFilter] = useState('action_required');
   const [notes, setNotes] = useState<Record<number, string>>({});
+  const [outcomes, setOutcomes] = useState<Record<number, 'confirmed_executed' | 'confirmed_not_executed' | 'confirmed_failed'>>({});
+  const [deviceStates, setDeviceStates] = useState<Record<number, string>>({});
   const [busyId, setBusyId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const canReview = user?.role === 'admin' || user?.role === 'supervisor';
 
   const load = useCallback(() => {
     setLoading(true);
-    listOperationApprovals(filter === 'all' ? undefined : filter)
+    const apiStatus = filter === 'all' ? undefined : filter;
+    listOperationApprovals(apiStatus)
       .then(setItems)
       .catch((error) => toast.error(error.message))
       .finally(() => setLoading(false));
@@ -57,6 +60,30 @@ export default function ApprovalsPage() {
     }
   };
 
+  const reconcile = async (item: any) => {
+    const outcome = outcomes[item.id];
+    const note = notes[item.id]?.trim();
+    const observedDeviceState = deviceStates[item.id]?.trim();
+    if (!outcome || !note || !observedDeviceState) {
+      toast.error('请选择核验结论，并填写现场设备状态和核验说明');
+      return;
+    }
+    setBusyId(item.id);
+    try {
+      await reconcileOperation(item.id, {
+        outcome,
+        note,
+        observed_device_state: observedDeviceState,
+      });
+      toast.success(outcome === 'confirmed_not_executed' ? '已确认未执行，操作已使用新幂等键回到待审批' : '人工核验已完成并写入审计记录');
+      await load();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
@@ -66,7 +93,7 @@ export default function ApprovalsPage() {
           <p className="text-sm text-muted mt-1">AI Agent 只能提出操作申请；未经主管人工审批，Equipment Gateway 不执行命令</p>
         </div>
         <select value={filter} onChange={(event) => setFilter(event.target.value)} className="text-sm">
-          <option value="pending">待审批</option><option value="approved">已批准</option><option value="rejected">已驳回</option><option value="all">全部</option>
+          <option value="action_required">待处理</option><option value="pending">待审批</option><option value="execution_unknown">待人工核验</option><option value="executing">执行中</option><option value="approved">已批准</option><option value="execution_failed">执行失败</option><option value="rejected">已驳回</option><option value="all">全部</option>
         </select>
       </div>
 
@@ -102,6 +129,14 @@ export default function ApprovalsPage() {
                       <div className="mt-1"><span className="text-muted">命令执行：</span>{item.command_executed ? '已执行' : '未执行'}</div>
                     </div>
                   )}
+                  {item.reconciliation_outcome && (
+                    <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3 text-sm">
+                      <div><span className="text-muted">核验结论：</span>{reconciliationLabel(item.reconciliation_outcome)}</div>
+                      <div className="mt-1"><span className="text-muted">现场状态：</span>{item.observed_device_state}</div>
+                      <div className="mt-1"><span className="text-muted">核验人：</span>{item.reconciled_by_name || '-'}</div>
+                      <div className="mt-1"><span className="text-muted">核验说明：</span>{item.reconciliation_note}</div>
+                    </div>
+                  )}
                 </div>
                 {item.status === 'pending' && (
                   <div className="lg:w-80 space-y-3">
@@ -122,6 +157,39 @@ export default function ApprovalsPage() {
                     {!canReview && <p className="text-xs text-muted">当前角色仅可查看，审批需主管或管理员执行。</p>}
                   </div>
                 )}
+                {item.status === 'execution_unknown' && (
+                  <div className="lg:w-80 space-y-3">
+                    <div className="rounded-lg border border-orange-500/25 bg-orange-500/[0.08] p-3 text-xs text-orange-200">
+                      禁止直接重试。请先到现场或设备平台核对实际状态。
+                    </div>
+                    <label className="block text-xs text-muted">核验结论
+                      <select
+                        value={outcomes[item.id] || ''}
+                        onChange={(event) => setOutcomes((current) => ({ ...current, [item.id]: event.target.value as typeof outcomes[number] }))}
+                        className="w-full mt-1.5"
+                        disabled={!canReview}
+                      >
+                        <option value="">请选择</option>
+                        <option value="confirmed_executed">确认已执行</option>
+                        <option value="confirmed_not_executed">确认未执行，重新审批</option>
+                        <option value="confirmed_failed">确认执行失败</option>
+                      </select>
+                    </label>
+                    <label className="block text-xs text-muted">现场设备状态
+                      <textarea rows={3} value={deviceStates[item.id] || ''} onChange={(event) => setDeviceStates((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="例：设备当前已停机，PLC 运行位为 0" className="w-full mt-1.5 resize-none" disabled={!canReview} />
+                    </label>
+                    <label className="block text-xs text-muted">核验说明
+                      <textarea rows={3} value={notes[item.id] || ''} onChange={(event) => setNotes((current) => ({ ...current, [item.id]: event.target.value }))} placeholder="说明核验渠道、时间和现场负责人" className="w-full mt-1.5 resize-none" disabled={!canReview} />
+                    </label>
+                    <button disabled={!canReview || busyId === item.id} onClick={() => reconcile(item)} className="btn btn-primary w-full"><SearchCheck size={15} />提交人工核验</button>
+                    {!canReview && <p className="text-xs text-muted">当前角色仅可查看，核验需主管或管理员执行。</p>}
+                  </div>
+                )}
+                {item.status === 'executing' && (
+                  <div className="lg:w-80 rounded-lg border border-blue-500/20 bg-blue-500/5 p-4 text-sm text-blue-200">
+                    命令已被认领，正在等待设备网关结果。超时后将自动进入人工核验。
+                  </div>
+                )}
               </div>
             </article>
           ))}
@@ -133,7 +201,12 @@ export default function ApprovalsPage() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const labels: Record<string, string> = { pending: '待审批', approved: '已批准', rejected: '已驳回', execution_failed: '执行失败' };
-  const styles: Record<string, string> = { pending: 'bg-yellow-500/15 text-yellow-300', approved: 'bg-green-500/15 text-green-300', rejected: 'bg-gray-500/15 text-gray-300', execution_failed: 'bg-red-500/15 text-red-300' };
+  const labels: Record<string, string> = { pending: '待审批', executing: '执行中', execution_unknown: '待人工核验', approved: '已批准', rejected: '已驳回', execution_failed: '执行失败' };
+  const styles: Record<string, string> = { pending: 'bg-yellow-500/15 text-yellow-300', executing: 'bg-blue-500/15 text-blue-300', execution_unknown: 'bg-orange-500/15 text-orange-300', approved: 'bg-green-500/15 text-green-300', rejected: 'bg-gray-500/15 text-gray-300', execution_failed: 'bg-red-500/15 text-red-300' };
   return <span className={`badge ${styles[status] || styles.pending}`}>{labels[status] || status}</span>;
+}
+
+function reconciliationLabel(outcome: string) {
+  const labels: Record<string, string> = { confirmed_executed: '确认已执行', confirmed_not_executed: '确认未执行', confirmed_failed: '确认执行失败' };
+  return labels[outcome] || outcome;
 }

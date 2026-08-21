@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import math
 import random
 from dataclasses import asdict, dataclass
@@ -37,6 +39,7 @@ class EquipmentCommand:
     equipment_id: UUID
     command_type: str
     parameters: dict[str, Any]
+    idempotency_key: str
 
 
 @dataclass(slots=True)
@@ -47,6 +50,7 @@ class EquipmentCommandResult:
     message: str
     executed_at: datetime
     data: dict[str, Any] | None = None
+    idempotency_key: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -56,6 +60,8 @@ class EquipmentCommandResult:
 
 
 class EquipmentGateway(Protocol):
+    """设备适配器必须持久化幂等键，并为重复键返回首次执行结果。"""
+
     async def read_telemetry(
         self,
         equipment_id: UUID,
@@ -97,6 +103,9 @@ class MockEquipmentGateway:
 
     def __init__(self) -> None:
         self._states: dict[UUID, _SimulationState] = {}
+        self._command_results: dict[str, EquipmentCommandResult] = {}
+        self._command_fingerprints: dict[str, str] = {}
+        self._command_locks: dict[str, asyncio.Lock] = {}
 
     def configure(
         self, equipment_ids: list[UUID], scenario: str = "normal", seed: int = 20260731
@@ -197,6 +206,33 @@ class MockEquipmentGateway:
     async def execute_command(
         self, command: EquipmentCommand
     ) -> EquipmentCommandResult:
+        fingerprint = json.dumps(
+            {
+                "equipment_id": str(command.equipment_id),
+                "command_type": command.command_type,
+                "parameters": command.parameters,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        lock = self._command_locks.setdefault(command.idempotency_key, asyncio.Lock())
+        async with lock:
+            previous_fingerprint = self._command_fingerprints.get(
+                command.idempotency_key
+            )
+            if previous_fingerprint and previous_fingerprint != fingerprint:
+                raise ValueError("同一幂等键不能用于不同的设备命令")
+            if cached := self._command_results.get(command.idempotency_key):
+                return cached
+
+            result = self._execute_command(command)
+            self._command_fingerprints[command.idempotency_key] = fingerprint
+            self._command_results[command.idempotency_key] = result
+            return result
+
+    def _execute_command(self, command: EquipmentCommand) -> EquipmentCommandResult:
         state = self._states.get(command.equipment_id)
         if not state:
             return EquipmentCommandResult(
@@ -205,6 +241,7 @@ class MockEquipmentGateway:
                 success=False,
                 message="设备未接入模拟网关",
                 executed_at=datetime.now(UTC),
+                idempotency_key=command.idempotency_key,
             )
 
         if command.command_type in {"shutdown", "emergency_stop"}:
@@ -221,6 +258,7 @@ class MockEquipmentGateway:
                 success=False,
                 message="模拟网关不支持该命令",
                 executed_at=datetime.now(UTC),
+                idempotency_key=command.idempotency_key,
             )
 
         return EquipmentCommandResult(
@@ -230,6 +268,7 @@ class MockEquipmentGateway:
             message="命令已由 Mock Equipment Gateway 执行",
             executed_at=datetime.now(UTC),
             data={"running": state.running, "scenario": state.scenario},
+            idempotency_key=command.idempotency_key,
         )
 
 

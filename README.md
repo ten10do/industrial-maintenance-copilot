@@ -265,7 +265,7 @@ RAG 检索范围包括：
 | Layer | Technology |
 | --- | --- |
 | Frontend | Next.js 15.1.12、React 19、TypeScript 5.7.2、Tailwind CSS 3.4.16、TanStack Query |
-| Backend | Python 3.11、FastAPI 0.115.6、SQLAlchemy 2、Pydantic 2、Alembic compatibility entrypoint |
+| Backend | Python 3.11、FastAPI 0.115.6、SQLAlchemy 2、Pydantic 2、Alembic versioned migrations |
 | Data | PostgreSQL 16（CI / Docker Compose）、SQLite（本地默认）、Redis 7 |
 | Async / Worker | Redis 协调的轻量 Python Worker/Scheduler heartbeat runtime；未引入 Celery |
 | ML | scikit-learn 1.6.1、SciPy 1.15.3、NumPy 2.2.6、joblib 1.4.2 |
@@ -344,6 +344,8 @@ npm run dev
 
 未设置 `DATABASE_URL` 时 API 使用本地 SQLite；未同时设置 `AI_ENABLED=true` 与有效 `LLM_API_KEY` 时使用 Mock AI。环境变量定义见 [`.env.example`](.env.example)。
 
+本地开发默认在 API 启动时升级数据库。生产环境必须在部署阶段执行 `alembic upgrade head`，应用实例只校验 revision，避免多副本同时执行 DDL。
+
 ## Project Structure
 
 ```text
@@ -401,7 +403,7 @@ industrial-maintenance-copilot/
 - 传感器特征仍包含强隐式 bearing-domain signal。
 - RUL V2 全部未通过 Promotion Gate，没有 RUL 模型进入 Staging。
 - Paderborn 限于 CC BY-NC 4.0；XJTU-SY 再分发与商业使用权不明确。
-- 历史 Alembic revision chain 不可用；当前使用幂等 compatibility migration entrypoint。
+- Alembic 从可接管既有数据库的 `20260811_01` 基线开始；基线之前没有可追溯 revision。
 - 当前 `master` 尚未执行生产数据库迁移、模型 production promotion 或生产部署。
 - 备件预留不执行 ERP 级库存扣减，附件持久化对象存储与多租户隔离未实现。
 
@@ -413,7 +415,7 @@ industrial-maintenance-copilot/
 - Field telemetry integration
 - Larger independent fleet validation
 - External RUL benchmark with clear redistribution license
-- Alembic revision-chain cleanup
+- 为后续结构变更持续增加可逆 Alembic revision
 
 ## Documentation
 

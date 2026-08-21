@@ -1,7 +1,8 @@
 """统一异常与分页工具。"""
+
 from __future__ import annotations
 
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 
 from fastapi import HTTPException, status
 from pydantic import BaseModel

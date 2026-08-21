@@ -1,4 +1,5 @@
 """工单及相关实体 schema。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -173,6 +174,11 @@ class AssignRequest(BaseModel):
     planned_end_at: datetime | None = None
 
 
+class SafetyConfirmationRequest(BaseModel):
+    confirmed: bool = False
+    note: str = Field(default="", max_length=500)
+
+
 class SubmitRequest(BaseModel):
     root_cause: str
     action_taken: str
@@ -212,6 +218,7 @@ class WorkOrderOut(BaseModel):
     actual_start_at: datetime | None = None
     actual_end_at: datetime | None = None
     safety_risk: str | None = None
+    requires_safety_confirmation: bool = False
     ai_diagnosis_summary: str | None = None
     maintenance_steps: list[Any] | None = None
     acceptance_criteria: str | None = None

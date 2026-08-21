@@ -96,9 +96,19 @@ export async function assignWorkOrder(id: number, data: { assignee_id: number; p
   return request<any>(`/work-orders/${id}/assign`, { method: 'POST', body: JSON.stringify(data) });
 }
 export async function acceptWorkOrder(id: number) { return request<any>(`/work-orders/${id}/accept`, { method: 'POST' }); }
-export async function startWorkOrder(id: number) { return request<any>(`/work-orders/${id}/start`, { method: 'POST' }); }
+export async function startWorkOrder(id: number, safetyConfirmation?: { confirmed: boolean; note: string }) {
+  return request<any>(`/work-orders/${id}/start`, {
+    method: 'POST',
+    body: safetyConfirmation ? JSON.stringify(safetyConfirmation) : undefined,
+  });
+}
 export async function pauseWorkOrder(id: number) { return request<any>(`/work-orders/${id}/pause`, { method: 'POST' }); }
-export async function resumeWorkOrder(id: number) { return request<any>(`/work-orders/${id}/resume`, { method: 'POST' }); }
+export async function resumeWorkOrder(id: number, safetyConfirmation?: { confirmed: boolean; note: string }) {
+  return request<any>(`/work-orders/${id}/resume`, {
+    method: 'POST',
+    body: safetyConfirmation ? JSON.stringify(safetyConfirmation) : undefined,
+  });
+}
 export async function submitWorkOrder(id: number, data: any) {
   return request<any>(`/work-orders/${id}/submit`, { method: 'POST', body: JSON.stringify(data) });
 }
@@ -254,9 +264,10 @@ export async function resetSimulator() {
 export async function tickSimulator() {
   return request<any>('/intelligence/simulator/tick', { method: 'POST' });
 }
-export async function listOperationApprovals(status?: string) {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
-  return request<any[]>(`/intelligence/approvals${qs}`);
+export async function listOperationApprovals(status?: string, limit = 100, offset = 0) {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (status) params.set('status', status);
+  return request<any[]>(`/intelligence/approvals?${params.toString()}`);
 }
 export async function approveOperation(id: number, note?: string) {
   return request<any>(`/intelligence/approvals/${id}/approve`, {
@@ -266,6 +277,15 @@ export async function approveOperation(id: number, note?: string) {
 export async function rejectOperation(id: number, note?: string) {
   return request<any>(`/intelligence/approvals/${id}/reject`, {
     method: 'POST', body: JSON.stringify({ note }),
+  });
+}
+export async function reconcileOperation(id: number, data: {
+  outcome: 'confirmed_executed' | 'confirmed_not_executed' | 'confirmed_failed';
+  note: string;
+  observed_device_state: string;
+}) {
+  return request<any>(`/intelligence/approvals/${id}/reconcile`, {
+    method: 'POST', body: JSON.stringify(data),
   });
 }
 export async function verifyMaintenance(data: {

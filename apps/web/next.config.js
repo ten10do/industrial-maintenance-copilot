@@ -1,9 +1,9 @@
+const path = require('path');
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+  outputFileTracingRoot: path.join(__dirname, '../..'),
   async rewrites() {
     const apiBase = process.env.API_BASE_URL || 'http://localhost:8000';
     return [

@@ -58,12 +58,8 @@ beforeEach(() => {
     user: { role: 'admin', id: 1, full_name: '管理员', email: 'admin@test.com', is_active: true },
   });
   mockListKnowledge.mockResolvedValue({ items: mockItems, total: 3 });
-  mockListEquipmentTypes.mockResolvedValue([
-    { id: 1, name: 'CNC机床' }, { id: 2, name: '液压站' },
-  ]);
-  mockListFaultCodes.mockResolvedValue([
-    { id: 1, code: 'E001', name: '主轴异响' }, { id: 2, code: 'E002', name: '压力异常' },
-  ]);
+  mockListEquipmentTypes.mockImplementation(() => new Promise(() => {}));
+  mockListFaultCodes.mockImplementation(() => new Promise(() => {}));
 });
 
 describe('KnowledgeList', () => {
@@ -71,6 +67,7 @@ describe('KnowledgeList', () => {
   it('渲染页面标题', async () => {
     render(<KnowledgeList />);
     expect(screen.getByText('知识库')).toBeInTheDocument();
+    expect(await screen.findByText('CNC 主轴维修手册')).toBeInTheDocument();
   });
 
   // 加载状态
@@ -165,18 +162,20 @@ describe('KnowledgeList', () => {
   });
 
   // 搜索框存在
-  it('展示搜索输入框和分类筛选', () => {
+  it('展示搜索输入框和分类筛选', async () => {
     render(<KnowledgeList />);
     const searchInput = screen.getByPlaceholderText('搜索标题或内容...');
     expect(searchInput).toBeInTheDocument();
+    expect(await screen.findByText('CNC 主轴维修手册')).toBeInTheDocument();
   });
 
   // 分类筛选下拉
-  it('展示分类筛选下拉选项', () => {
+  it('展示分类筛选下拉选项', async () => {
     render(<KnowledgeList />);
     expect(screen.getByText('全部类型')).toBeInTheDocument();
     expect(screen.getByText('全部设备类型')).toBeInTheDocument();
     expect(screen.getByText('全部故障代码')).toBeInTheDocument();
+    expect(await screen.findByText('CNC 主轴维修手册')).toBeInTheDocument();
   });
 
   // API 错误处理

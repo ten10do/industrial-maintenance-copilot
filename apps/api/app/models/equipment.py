@@ -15,6 +15,7 @@ from app.models.base import (
     RiskLevelEnum,
     TimestampMixin,
 )
+from app.models.user import User
 
 
 class EquipmentType(AuditMixin, Base):
@@ -69,6 +70,9 @@ class Equipment(AuditMixin, Base):
 
     equipment_type: Mapped[EquipmentType | None] = relationship(
         back_populates="equipment"
+    )
+    responsible_person: Mapped[User | None] = relationship(
+        foreign_keys=[responsible_person_id]
     )
 
 

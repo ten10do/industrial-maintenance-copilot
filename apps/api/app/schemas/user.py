@@ -1,4 +1,5 @@
 """认证与用户 schema。"""
+
 from __future__ import annotations
 
 from datetime import datetime

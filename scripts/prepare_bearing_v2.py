@@ -21,6 +21,7 @@ sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
 import prepare_bearing_dataset as v1_preparation
+
 from app.ml.features import extract_features
 from app.ml.types import FeatureVector, TelemetryWindow
 from app.ml.v2_features import (

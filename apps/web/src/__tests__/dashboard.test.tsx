@@ -58,6 +58,10 @@ beforeEach(() => {
   jest.clearAllMocks();
 });
 
+afterEach(() => {
+  jest.restoreAllMocks();
+});
+
 describe('Dashboard - Technician View', () => {
   beforeEach(() => {
     mockUseAuth.mockReturnValue({
@@ -73,11 +77,14 @@ describe('Dashboard - Technician View', () => {
   });
 
   it('加载失败展示暂无数据', async () => {
-    mockGetTechnicianDashboard.mockRejectedValue(new Error('Failed'));
+    const error = new Error('Failed');
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockGetTechnicianDashboard.mockRejectedValue(error);
     render(<Dashboard />);
     await waitFor(() => {
       expect(screen.getByText('暂无数据')).toBeInTheDocument();
     });
+    expect(consoleError).toHaveBeenCalledWith(error);
   });
 
   it('展示维修工作台标题', async () => {

@@ -4,6 +4,7 @@ services:
     runtime: docker
     rootDir: apps/api
     dockerfilePath: ./Dockerfile
+    preDeployCommand: python -m alembic upgrade head
     plan: free
     healthCheckPath: /ready
     autoDeployTrigger: commit
@@ -28,6 +29,8 @@ services:
       - key: LLM_MODEL
         sync: false
       - key: SEED_ON_STARTUP
+        value: "false"
+      - key: AUTO_MIGRATE_ON_STARTUP
         value: "false"
       - key: STORAGE_TYPE
         value: local

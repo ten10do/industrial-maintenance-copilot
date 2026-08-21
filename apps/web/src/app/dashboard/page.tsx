@@ -96,7 +96,7 @@ export default function Dashboard() {
           <PlatformMetric icon={<HeartPulse size={18} />} label="平均健康分" value={intelligence.average_health_score} suffix="/100" tone="green" />
           <PlatformMetric icon={<Activity size={18} />} label="实时异常" value={intelligence.active_anomalies} suffix="项" tone="orange" onClick={() => router.push('/monitoring')} />
           <PlatformMetric icon={<ShieldAlert size={18} />} label="高风险设备" value={intelligence.high_risk_equipment} suffix="台" tone="red" onClick={() => router.push('/predictive-maintenance')} />
-          <PlatformMetric icon={<Clock size={18} />} label="待审批操作" value={intelligence.pending_approvals} suffix="项" tone="yellow" onClick={() => router.push('/approvals')} />
+          <PlatformMetric icon={<Clock size={18} />} label="待处理操作" value={intelligence.pending_approvals} suffix="项" tone="yellow" onClick={() => router.push('/approvals')} />
           <PlatformMetric icon={<TrendingUp size={18} />} label="已生成遥测" value={intelligence.simulator?.generated_points || 0} suffix="点" tone="purple" />
         </div>
       )}

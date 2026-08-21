@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, supervisor_or_admin
@@ -21,6 +22,7 @@ from app.models.intelligence import (
     MaintenanceRecommendation,
     MaintenanceVerification,
     OperationApproval,
+    OperationExecutionAudit,
     RiskPrediction,
     SparePartReservation,
     TelemetryRecord,
@@ -30,6 +32,7 @@ from app.models.user import User
 from app.models.workorder import WorkOrder
 from app.schemas.intelligence import (
     ApprovalCreate,
+    ApprovalReconciliation,
     ApprovalReview,
     SimulatorConfigureRequest,
     SimulatorStatusOut,
@@ -37,6 +40,7 @@ from app.schemas.intelligence import (
     TelemetryOut,
     VerificationCreate,
 )
+from app.services.approval_service import mark_timed_out_executions
 from app.services.intelligence_service import verify_maintenance
 from app.services.simulator import simulator_controller
 
@@ -45,6 +49,7 @@ router = APIRouter(prefix="/intelligence", tags=["intelligent-maintenance"])
 
 @router.get("/overview")
 def overview(db: Session = Depends(get_db), _=Depends(get_current_user)):
+    mark_timed_out_executions(db)
     equipment = db.query(Equipment).all()
     active_anomalies = (
         db.query(AnomalyEvent)
@@ -53,7 +58,7 @@ def overview(db: Session = Depends(get_db), _=Depends(get_current_user)):
     )
     pending_approvals = (
         db.query(OperationApproval)
-        .filter(OperationApproval.status == "pending")
+        .filter(OperationApproval.status.in_(["pending", "execution_unknown"]))
         .count()
     )
     predictions = (
@@ -326,15 +331,55 @@ def simulator_status(_=Depends(get_current_user)):
 @router.get("/approvals")
 def list_approvals(
     status: str | None = None,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
+    mark_timed_out_executions(db)
     query = db.query(OperationApproval)
-    if status:
+    if status == "action_required":
+        query = query.filter(
+            OperationApproval.status.in_(["pending", "execution_unknown"])
+        )
+    elif status:
         query = query.filter(OperationApproval.status == status)
+    items = (
+        query.order_by(OperationApproval.requested_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    equipment_ids = {item.equipment_id for item in items}
+    equipment_by_id = (
+        {
+            equipment.id: equipment
+            for equipment in db.query(Equipment)
+            .filter(Equipment.id.in_(equipment_ids))
+            .all()
+        }
+        if equipment_ids
+        else {}
+    )
+    user_ids = {
+        user_id
+        for item in items
+        for user_id in (item.requested_by, item.reviewed_by, item.reconciled_by)
+        if user_id is not None
+    }
+    users_by_id = (
+        {user.id: user for user in db.query(User).filter(User.id.in_(user_ids)).all()}
+        if user_ids
+        else {}
+    )
     return [
-        _approval_dict(item, db)
-        for item in query.order_by(OperationApproval.requested_at.desc()).all()
+        _approval_dict(
+            item,
+            db,
+            equipment_by_id=equipment_by_id,
+            users_by_id=users_by_id,
+        )
+        for item in items
     ]
 
 
@@ -378,13 +423,75 @@ async def approve_operation(
     db: Session = Depends(get_db),
     user: User = Depends(supervisor_or_admin),
 ):
+    mark_timed_out_executions(db)
     approval = db.get(OperationApproval, approval_id)
     if not approval:
         raise HTTPException(status_code=404, detail="审批记录不存在")
     if approval.status == "approved" and approval.command_executed:
         return _approval_dict(approval, db)
+    if approval.status in {"executing", "execution_unknown"}:
+        raise HTTPException(
+            status_code=409,
+            detail="命令正在执行或执行结果未知，禁止自动重复下发，请先完成人工核验",
+        )
     if approval.status != "pending":
         raise HTTPException(status_code=409, detail="该操作已完成审批")
+
+    execution_key = (
+        approval.execution_key
+        or uuid5(
+            NAMESPACE_URL,
+            f"industrial-maintenance-operation-approval:{approval.id}",
+        ).hex
+    )
+    started_at = datetime.now(UTC)
+    execution_attempt = approval.execution_attempt + 1
+    claim = db.execute(
+        update(OperationApproval)
+        .where(
+            OperationApproval.id == approval_id,
+            OperationApproval.status == "pending",
+        )
+        .values(
+            status="executing",
+            execution_key=execution_key,
+            reviewed_by=user.id,
+            reviewed_at=datetime.now(UTC),
+            review_note=payload.note,
+            execution_started_at=started_at,
+            execution_attempt=execution_attempt,
+        )
+    )
+    if claim.rowcount != 1:
+        db.rollback()
+        db.expire_all()
+        approval = db.get(OperationApproval, approval_id)
+        if not approval:
+            raise HTTPException(status_code=404, detail="审批记录不存在")
+        if approval.status == "approved" and approval.command_executed:
+            return _approval_dict(approval, db)
+        raise HTTPException(
+            status_code=409,
+            detail="命令已被其他请求认领，禁止自动重复下发，请稍后查询执行结果",
+        )
+    db.add(
+        OperationExecutionAudit(
+            approval_id=approval_id,
+            event_type="execution_claimed",
+            execution_key=execution_key,
+            execution_attempt=execution_attempt,
+            actor_id=user.id,
+            occurred_at=started_at,
+            note=payload.note,
+        )
+    )
+    db.commit()
+    db.expire_all()
+    approval = db.get(OperationApproval, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="审批记录不存在")
+    execution_key = approval.execution_key or execution_key
+
     equipment = db.get(Equipment, approval.equipment_id)
     if not equipment:
         raise HTTPException(status_code=404, detail="设备不存在")
@@ -395,17 +502,183 @@ async def approve_operation(
             equipment_id=UUID(equipment.asset_uuid),
             command_type=approval.command_type,
             parameters=approval.command_payload or {},
+            idempotency_key=execution_key,
         )
     )
-    approval.status = "approved" if result.success else "execution_failed"
-    approval.reviewed_by = user.id
-    approval.reviewed_at = datetime.now(UTC)
-    approval.review_note = payload.note
-    approval.command_executed = result.success
-    approval.command_result = result.to_dict()
+    result_dict = result.to_dict()
+    completed_at = datetime.now(UTC)
+    completed = db.execute(
+        update(OperationApproval)
+        .where(
+            OperationApproval.id == approval_id,
+            OperationApproval.status == "executing",
+        )
+        .values(
+            status="approved" if result.success else "execution_failed",
+            reviewed_by=user.id,
+            reviewed_at=completed_at,
+            review_note=payload.note,
+            command_executed=result.success,
+            command_result=result_dict,
+            execution_key=execution_key,
+        )
+    )
+    if completed.rowcount == 1:
+        db.add(
+            OperationExecutionAudit(
+                approval_id=approval_id,
+                event_type="execution_completed",
+                execution_key=execution_key,
+                execution_attempt=execution_attempt,
+                actor_id=user.id,
+                occurred_at=completed_at,
+                note=result.message,
+                details=result_dict,
+            )
+        )
     db.commit()
-    db.refresh(approval)
+    db.expire_all()
+    approval = db.get(OperationApproval, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="审批记录不存在")
     return _approval_dict(approval, db)
+
+
+@router.post("/approvals/{approval_id}/reconcile")
+def reconcile_operation(
+    approval_id: int,
+    payload: ApprovalReconciliation,
+    db: Session = Depends(get_db),
+    user: User = Depends(supervisor_or_admin),
+):
+    mark_timed_out_executions(db)
+    approval = db.get(OperationApproval, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="审批记录不存在")
+    if approval.status != "execution_unknown":
+        raise HTTPException(status_code=409, detail="该命令当前不需要人工核验")
+
+    reconciled_at = datetime.now(UTC)
+    old_execution_key = approval.execution_key or "legacy-missing-key"
+    values: dict = {
+        "reconciliation_outcome": payload.outcome,
+        "reconciliation_note": payload.note,
+        "observed_device_state": payload.observed_device_state,
+        "reconciled_by": user.id,
+        "reconciled_at": reconciled_at,
+    }
+    details: dict = {"outcome": payload.outcome}
+    if payload.outcome == "confirmed_executed":
+        values.update(
+            status="approved",
+            command_executed=True,
+            command_result={
+                "success": True,
+                "message": "经人工现场核验，确认设备命令已执行",
+                "idempotency_key": old_execution_key,
+                "reconciled": True,
+                "observed_device_state": payload.observed_device_state,
+            },
+        )
+    elif payload.outcome == "confirmed_failed":
+        values.update(
+            status="execution_failed",
+            command_executed=False,
+            command_result={
+                "success": False,
+                "message": "经人工现场核验，确认设备命令执行失败",
+                "idempotency_key": old_execution_key,
+                "reconciled": True,
+                "observed_device_state": payload.observed_device_state,
+            },
+        )
+    else:
+        new_execution_key = uuid4().hex
+        values.update(
+            status="pending",
+            execution_key=new_execution_key,
+            execution_started_at=None,
+            reviewed_by=None,
+            reviewed_at=None,
+            review_note=None,
+            command_executed=False,
+            command_result=None,
+        )
+        details["new_execution_key"] = new_execution_key
+
+    reconciled = db.execute(
+        update(OperationApproval)
+        .where(
+            OperationApproval.id == approval_id,
+            OperationApproval.status == "execution_unknown",
+        )
+        .values(**values)
+    )
+    if reconciled.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="该命令已被其他人员完成核验")
+    db.add(
+        OperationExecutionAudit(
+            approval_id=approval_id,
+            event_type=f"reconciled_{payload.outcome}",
+            execution_key=old_execution_key,
+            execution_attempt=approval.execution_attempt,
+            actor_id=user.id,
+            occurred_at=reconciled_at,
+            note=payload.note,
+            observed_device_state=payload.observed_device_state,
+            details=details,
+        )
+    )
+    db.commit()
+    db.expire_all()
+    approval = db.get(OperationApproval, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="审批记录不存在")
+    return _approval_dict(approval, db)
+
+
+@router.get("/approvals/{approval_id}/audit")
+def get_operation_audit(
+    approval_id: int,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    if not db.get(OperationApproval, approval_id):
+        raise HTTPException(status_code=404, detail="审批记录不存在")
+    events = (
+        db.query(OperationExecutionAudit)
+        .filter(OperationExecutionAudit.approval_id == approval_id)
+        .order_by(OperationExecutionAudit.occurred_at.asc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+    actor_ids = {event.actor_id for event in events if event.actor_id}
+    actors = (
+        {
+            actor.id: actor.full_name
+            for actor in db.query(User).filter(User.id.in_(actor_ids)).all()
+        }
+        if actor_ids
+        else {}
+    )
+    return [
+        {
+            "id": event.id,
+            "event_type": event.event_type,
+            "execution_key": event.execution_key,
+            "execution_attempt": event.execution_attempt,
+            "actor_name": actors.get(event.actor_id),
+            "occurred_at": event.occurred_at,
+            "note": event.note,
+            "observed_device_state": event.observed_device_state,
+            "details": event.details,
+        }
+        for event in events
+    ]
 
 
 @router.post("/approvals/{approval_id}/reject")
@@ -418,15 +691,28 @@ def reject_operation(
     approval = db.get(OperationApproval, approval_id)
     if not approval:
         raise HTTPException(status_code=404, detail="审批记录不存在")
-    if approval.status != "pending":
-        raise HTTPException(status_code=409, detail="该操作已完成审批")
-    approval.status = "rejected"
-    approval.reviewed_by = user.id
-    approval.reviewed_at = datetime.now(UTC)
-    approval.review_note = payload.note
-    approval.command_executed = False
+    rejected = db.execute(
+        update(OperationApproval)
+        .where(
+            OperationApproval.id == approval_id,
+            OperationApproval.status == "pending",
+        )
+        .values(
+            status="rejected",
+            reviewed_by=user.id,
+            reviewed_at=datetime.now(UTC),
+            review_note=payload.note,
+            command_executed=False,
+        )
+    )
+    if rejected.rowcount != 1:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="该操作已进入执行或完成审批")
     db.commit()
-    db.refresh(approval)
+    db.expire_all()
+    approval = db.get(OperationApproval, approval_id)
+    if not approval:
+        raise HTTPException(status_code=404, detail="审批记录不存在")
     return _approval_dict(approval, db)
 
 
@@ -630,10 +916,29 @@ def _agent_run_dict(item: AgentRun, db: Session) -> dict:
     }
 
 
-def _approval_dict(item: OperationApproval, db: Session) -> dict:
-    equipment = db.get(Equipment, item.equipment_id)
-    requester = db.get(User, item.requested_by) if item.requested_by else None
-    reviewer = db.get(User, item.reviewed_by) if item.reviewed_by else None
+def _approval_dict(
+    item: OperationApproval,
+    db: Session,
+    *,
+    equipment_by_id: dict[int, Equipment] | None = None,
+    users_by_id: dict[int, User] | None = None,
+) -> dict:
+    equipment = (
+        equipment_by_id.get(item.equipment_id)
+        if equipment_by_id is not None
+        else db.get(Equipment, item.equipment_id)
+    )
+
+    def get_user(user_id: int | None) -> User | None:
+        if user_id is None:
+            return None
+        if users_by_id is not None:
+            return users_by_id.get(user_id)
+        return db.get(User, user_id)
+
+    requester = get_user(item.requested_by)
+    reviewer = get_user(item.reviewed_by)
+    reconciler = get_user(item.reconciled_by)
     return {
         "id": item.id,
         "equipment_id": item.equipment_id,
@@ -643,6 +948,7 @@ def _approval_dict(item: OperationApproval, db: Session) -> dict:
         "recommendation_id": item.recommendation_id,
         "command_type": item.command_type,
         "command_payload": item.command_payload,
+        "execution_key": item.execution_key,
         "risk_level": item.risk_level.value,
         "risk_reason": item.risk_reason,
         "status": item.status,
@@ -651,6 +957,13 @@ def _approval_dict(item: OperationApproval, db: Session) -> dict:
         "requested_at": item.requested_at,
         "reviewed_at": item.reviewed_at,
         "review_note": item.review_note,
+        "execution_started_at": item.execution_started_at,
+        "execution_attempt": item.execution_attempt,
         "command_executed": item.command_executed,
         "command_result": item.command_result,
+        "reconciliation_outcome": item.reconciliation_outcome,
+        "reconciliation_note": item.reconciliation_note,
+        "observed_device_state": item.observed_device_state,
+        "reconciled_by_name": reconciler.full_name if reconciler else None,
+        "reconciled_at": item.reconciled_at,
     }

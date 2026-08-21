@@ -24,8 +24,8 @@ from scipy.io import loadmat
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 
-from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features  # noqa: E402
-from app.ml.types import FeatureVector, TelemetryWindow  # noqa: E402
+from app.ml.features import FEATURE_SCHEMA_VERSION, extract_features
+from app.ml.types import FeatureVector, TelemetryWindow
 
 _STRING_DTYPES = {
     "target": "<U64",

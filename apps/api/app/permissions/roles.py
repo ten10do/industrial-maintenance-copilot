@@ -1,4 +1,5 @@
 """权限校验工具。"""
+
 from __future__ import annotations
 
 from fastapi import HTTPException, status
@@ -11,9 +12,13 @@ def require_roles(*roles: RoleEnum):
 
     def _check(user) -> object:
         if user is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="未认证")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED, detail="未认证"
+            )
         if RoleEnum(user.role) not in roles:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="权限不足")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="权限不足"
+            )
         return user
 
     return _check

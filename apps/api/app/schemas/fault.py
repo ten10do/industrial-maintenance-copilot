@@ -1,4 +1,5 @@
 """故障上报 schema。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -56,6 +57,7 @@ class FaultReportOut(BaseModel):
 
 class FaultReportDetail(FaultReportOut):
     """Detail view with full related work order info."""
+
     related_work_order_code: str | None = None
     related_work_order_status: str | None = None
 

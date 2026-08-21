@@ -1,7 +1,8 @@
 """工单状态机：定义合法流转与校验。"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
@@ -55,7 +56,7 @@ def change_status(
     prev = wo.status
     wo.status = target
     wo.updated_by = str(user_id) if user_id else None
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if target == S.in_progress and not wo.actual_start_at:
         wo.actual_start_at = now
     if target == S.completed:

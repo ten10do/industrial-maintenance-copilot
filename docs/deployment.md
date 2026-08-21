@@ -5,7 +5,7 @@
 ## 强制发布顺序
 
 1. 备份生产 PostgreSQL。
-2. 在副本或受控窗口执行兼容迁移。
+2. 在副本或受控窗口执行 `alembic upgrade head`。
 3. 部署 Render API。
 4. 验证 `/health` 和 `/ready`。
 5. 部署 Worker 与 Scheduler。
@@ -35,16 +35,22 @@ pg_restore --list pre-upgrade.dump >/dev/null
 - `SEED_ON_STARTUP=false`；
 - 维护窗口和回滚决策人已确认。
 
-当前仓库沿用早期项目的幂等 `upgrade_schema`，它先增量补齐旧设备/清单字段，再创建缺失的新平台表。测试用 `downgrade_intelligent_schema` 会删除智能运维表但保留旧工单表和兼容列。生产正常回滚不建议删除新表。
+Alembic revision `20260811_01` 是可接管基线：首次升级时调用幂等兼容逻辑补齐旧设备/清单字段并创建缺失表，然后写入 `alembic_version`。新库、未版本化旧库和已经具备当前结构的数据库都使用同一条 `alembic upgrade head` 路径；后续结构变化必须新增 revision，应用启动不再直接调用兼容升级器。
+
+基线可能接管包含旧工单的生产库，因此它明确禁止破坏性 `alembic downgrade base`。生产回滚应保留数据库结构并回退应用；只有经过审批的备份恢复才能回退基线前的数据结构。
+
+生产环境禁止 `AUTO_MIGRATE_ON_STARTUP=true`。Render 使用 `preDeployCommand` 在新版本切流前单独执行迁移；API、Worker 和 Scheduler 只检查数据库是否处于 Alembic head，未迁移时拒绝就绪或停止业务循环。Docker Compose 的单个 API 容器在启动 Uvicorn 前执行一次迁移。本地直接运行 API 时默认允许自动迁移。
 
 受控迁移验证：
 
 ```bash
 cd apps/api
+alembic current
+alembic upgrade head
 python -m scripts.verify_migrations
 ```
 
-CI 会在真实 PostgreSQL 16 上执行 upgrade → 旧工单兼容数据 → downgrade 到安全版本 → upgrade → Seed，并检查外键、索引与时区列。
+CI 会在 PostgreSQL 16 上执行 Alembic upgrade、重复 upgrade、旧工单兼容数据与 Seed，并检查 revision、外键、索引与时区列。
 
 ## Render
 
@@ -54,15 +60,19 @@ CI 会在真实 PostgreSQL 16 上执行 upgrade → 旧工单兼容数据 → do
 | --- | --- | --- | --- |
 | `APP_ENV=production` | 是 | 是 | 生产标识 |
 | `DATABASE_URL` | 是 | 是 | 托管 PostgreSQL TLS 连接串 |
+| `AUTO_MIGRATE_ON_STARTUP=false` | 是 | 是 | 生产实例只校验版本，不执行 DDL |
 | `REDIS_URL` | 是 | 是 | 托管 Redis TLS/私网连接串 |
 | `SECRET_KEY` | 是 | 是 | 独立高熵 JWT Secret |
 | `FRONTEND_URL` | 是 | 否 | 精确 Netlify Origin |
 | `AI_ENABLED=true` | 是 | 是 | 生产解释型 AI 开关 |
 | `LLM_API_KEY` / `LLM_MODEL` | 按需 | 按需 | 平台 Secret，不写入日志 |
+| `EQUIPMENT_COMMAND_TIMEOUT_SECONDS` | 是 | 是 | 高风险命令转人工核验的超时阈值，默认 300 秒 |
 | `SEED_ON_STARTUP=false` | 是 | 是 | 生产禁止自动演示数据 |
 | `STORAGE_TYPE` 及存储凭证 | 是 | 按需 | 附件应使用持久化对象存储 |
 
 API 启动命令：
+
+API、Worker 和 Scheduler 会在启动时校验安全配置：非 `development` 环境若使用默认/短于 32 字符的 `SECRET_KEY`、启用 `SEED_ON_STARTUP` 或启用启动时自动迁移，进程会直接退出。生产环境也会拒绝种子数据使用的 `@example.com` 演示账号及其已有 Token。
 
 ```text
 python -m uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

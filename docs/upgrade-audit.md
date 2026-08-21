@@ -37,7 +37,7 @@ scripts/        演示数据维护脚本
 | 前端 | Next.js 15、React 19、TypeScript、Tailwind CSS、React Query、Recharts |
 | 后端 | Python 3.11、FastAPI、Pydantic v2、SQLAlchemy 2 |
 | 数据库 | 本地 SQLite；部署与 CI 支持 PostgreSQL 16 |
-| 迁移 | Alembic 依赖已安装；当前运行时使用幂等 `upgrade_schema` 兼容旧库 |
+| 迁移 | Alembic `20260811_01` 可接管基线；运行时执行 `upgrade head` |
 | AI Provider | OpenAI 兼容 Chat Completions 客户端；无 Key 自动降级 Mock |
 | RAG | 知识文章分块模型；关键词检索、设备类型和故障代码加权；相似历史工单检索 |
 | 测试 | pytest、Jest、Testing Library、Playwright |
@@ -101,7 +101,7 @@ scripts/        演示数据维护脚本
 | Next.js production build | passed，19 个应用路由 |
 | Playwright 本地 E2E | 23 passed / 1 个公开环境 Smoke 按配置跳过 |
 | 智能运维专项 E2E | 轴承磨损遥测 → 诊断/RAG → 预测 → 调度/预留 → 审批 → 维修 → 验证 → 案例草稿 |
-| SQLite 迁移往返 | upgrade → downgrade → upgrade passed，旧工单数据保留 |
+| SQLite 迁移接管 | 新库、未版本化旧库、重复 `upgrade head` passed，旧数据保留 |
 | Docker CLI | 当前执行环境未安装，未执行容器构建 |
 
 当前仓库使用 Netlify Web、Render API 与 PostgreSQL 的协同部署结构，且没有 Sites 托管清单。为避免只发布前端而连接到旧 API，本次未覆盖现有线上环境；发布时应按 `docs/deployment.md` 同步升级 API、数据库和 Web。
@@ -131,6 +131,6 @@ scripts/        演示数据维护脚本
 
 ### 迁移结论
 
-早期仓库虽然安装了 Alembic 依赖，但没有可安全接管既有数据库的 revision 历史。本次继续使用可审计的幂等兼容迁移入口：先补齐旧表字段，再创建智能运维表。提供测试用安全 downgrade，仅删除智能运维表并保留旧工单表和增量兼容列。生产回滚推荐保留新表、只回退应用。
+早期仓库虽然安装了 Alembic 依赖，但没有可安全接管既有数据库的 revision 历史。现在以 `20260811_01` 建立可接管基线：revision 内先补齐旧表字段，再创建智能运维表，并由 Alembic 写入版本。基线不可破坏性降级；生产回滚保留新表、只回退应用。
 
-SQLite 的空库升级、旧表补列、幂等执行、降级/再升级、外键、索引和 UTC 类型均已本地验证。PostgreSQL 验证配置在 GitHub Actions 中，只有对应 CI job 实际成功后才可声明 PostgreSQL 与 Docker Compose 通过。
+SQLite 的空库升级、旧库接管、重复升级、外键、索引和 UTC 类型均已本地验证。PostgreSQL 验证配置在 GitHub Actions 中，只有对应 CI job 实际成功后才可声明 PostgreSQL 与 Docker Compose 通过。

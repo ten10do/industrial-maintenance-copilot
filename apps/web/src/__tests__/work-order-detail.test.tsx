@@ -90,6 +90,35 @@ const assignedWo = {
   ],
 };
 
+const acceptedHighRiskWo = {
+  ...assignedWo,
+  status: 'accepted',
+  safety_risk: '高压电气设备，开始维修前必须执行 LOTO',
+  requires_safety_confirmation: true,
+  checklist_items: [
+    {
+      id: 11,
+      category: 'safety',
+      content: '设备已停机',
+      is_completed: true,
+      is_required: true,
+      completed_by: 3,
+      completed_at: '2026-08-11T08:00:00Z',
+      remark: null,
+    },
+    {
+      id: 12,
+      category: 'safety',
+      content: '已执行上锁挂牌（LOTO）',
+      is_completed: true,
+      is_required: true,
+      completed_by: 3,
+      completed_at: '2026-08-11T08:01:00Z',
+      remark: null,
+    },
+  ],
+};
+
 const inProgressWo = {
   ...assignedWo,
   status: 'in_progress',
@@ -581,6 +610,71 @@ describe('WorkOrderDetail', () => {
       });
       // 工单主体应不受影响
       expect(screen.getByText('CNC主轴异响')).toBeInTheDocument();
+    });
+  });
+
+  describe('High-risk Safety Confirmation', () => {
+    beforeEach(() => {
+      mockUseAuth.mockReturnValue({
+        user: { role: 'technician', id: 3, full_name: '工程师', email: 't@t.com', is_active: true },
+      });
+    });
+
+    it('普通工单开始维修时不要求额外确认', async () => {
+      mockGetWorkOrder.mockResolvedValue({
+        ...assignedWo,
+        status: 'accepted',
+        requires_safety_confirmation: false,
+      });
+      mockStartWorkOrder.mockResolvedValue({});
+      const user = userEvent.setup();
+      render(<WorkOrderDetail />);
+
+      await user.click(await screen.findByText('开始维修'));
+
+      await waitFor(() => expect(mockStartWorkOrder).toHaveBeenCalledWith(1, undefined));
+      expect(screen.queryByTestId('high-risk-safety-confirmation')).not.toBeInTheDocument();
+    });
+
+    it('高风险工单将安全确认与开始操作一同提交', async () => {
+      mockGetWorkOrder.mockResolvedValue(acceptedHighRiskWo);
+      mockStartWorkOrder.mockResolvedValue({});
+      const user = userEvent.setup();
+      render(<WorkOrderDetail />);
+
+      await user.click(await screen.findByText('开始维修'));
+      expect(screen.getByTestId('high-risk-safety-confirmation')).toBeInTheDocument();
+      expect(mockStartWorkOrder).not.toHaveBeenCalled();
+
+      await user.click(screen.getByLabelText(/我已现场核对/));
+      await user.type(
+        screen.getByPlaceholderText('填写现场安全确认说明（至少 8 个字符）'),
+        '已核对现场隔离和个人防护措施',
+      );
+      await user.click(screen.getByText('确认安全措施并开始维修'));
+
+      await waitFor(() => {
+        expect(mockStartWorkOrder).toHaveBeenCalledWith(1, {
+          confirmed: true,
+          note: '已核对现场隔离和个人防护措施',
+        });
+      });
+    });
+
+    it('必做安全检查项未完成时不能提交确认', async () => {
+      mockGetWorkOrder.mockResolvedValue({
+        ...acceptedHighRiskWo,
+        checklist_items: acceptedHighRiskWo.checklist_items.map((item, index) => (
+          index === 0 ? { ...item, is_completed: false, completed_by: null, completed_at: null } : item
+        )),
+      });
+      const user = userEvent.setup();
+      render(<WorkOrderDetail />);
+
+      await user.click(await screen.findByText('开始维修'));
+
+      expect(screen.getByText('请先完成维修检查清单中的全部必做安全项。')).toBeInTheDocument();
+      expect(screen.getByText('确认安全措施并开始维修')).toBeDisabled();
     });
   });
 

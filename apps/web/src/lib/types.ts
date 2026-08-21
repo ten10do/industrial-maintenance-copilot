@@ -188,6 +188,7 @@ export interface WorkOrder {
   actual_start_at?: string;
   actual_end_at?: string;
   safety_risk?: string;
+  requires_safety_confirmation?: boolean;
   ai_diagnosis_summary?: string;
   maintenance_steps?: unknown[];
   acceptance_criteria?: string;

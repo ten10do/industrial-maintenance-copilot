@@ -135,9 +135,19 @@ test.describe('智能运维与预测性维护闭环', () => {
     await switchLogin(page, assignee.email, 'Demo123456');
 
     await api(page, 'POST', `/work-orders/${workOrder.id}/accept`, {});
-    await api(page, 'POST', `/work-orders/${workOrder.id}/start`, {});
+    const acceptedOrder = await api(page, 'GET', `/work-orders/${workOrder.id}`);
+    for (const item of acceptedOrder.checklist_items.filter((entry: any) => entry.category === 'safety')) {
+      await api(page, 'PUT', `/work-orders/${workOrder.id}/checklist/${item.id}`, {
+        is_completed: true,
+        remark: '开始维修前现场安全确认',
+      });
+    }
+    await api(page, 'POST', `/work-orders/${workOrder.id}/start`, {
+      confirmed: true,
+      note: '已现场核对停机、能源隔离、LOTO 和个人防护措施',
+    });
     const activeOrder = await api(page, 'GET', `/work-orders/${workOrder.id}`);
-    for (const item of activeOrder.checklist_items) {
+    for (const item of activeOrder.checklist_items.filter((entry: any) => entry.category !== 'safety')) {
       await api(page, 'PUT', `/work-orders/${workOrder.id}/checklist/${item.id}`, {
         is_completed: true,
         remark: '模拟闭环已完成',

@@ -1,12 +1,17 @@
 """智能运维闭环、仿真确定性与人工审批测试。"""
 
-from datetime import UTC, datetime
+import asyncio
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import pytest
 
 from app.ai.client import LLMClient
-from app.gateways.equipment import MockEquipmentGateway, TelemetrySnapshot
+from app.gateways.equipment import (
+    EquipmentCommand,
+    MockEquipmentGateway,
+    TelemetrySnapshot,
+)
 from app.models.base import (
     KnowledgeCategoryEnum,
     WorkOrderStatusEnum,
@@ -17,6 +22,7 @@ from app.models.intelligence import (
     AnomalyEvent,
     FaultDiagnosis,
     OperationApproval,
+    OperationExecutionAudit,
     SparePartReservation,
     TelemetryRecord,
     ToolInvocation,
@@ -45,6 +51,37 @@ async def test_mock_gateway_is_deterministic():
         (item.vibration_rms, item.bearing_temperature, item.motor_current)
         for item in second_run
     ]
+
+
+@pytest.mark.asyncio
+async def test_mock_gateway_deduplicates_concurrent_commands():
+    equipment_id = UUID("22222222-2222-2222-2222-222222222222")
+    gateway = MockEquipmentGateway()
+    gateway.configure([equipment_id])
+    command = EquipmentCommand(
+        equipment_id=equipment_id,
+        command_type="shutdown",
+        parameters={"reason": "planned maintenance"},
+        idempotency_key="approval-command-001",
+    )
+
+    results = await asyncio.gather(
+        *(gateway.execute_command(command) for _ in range(20))
+    )
+
+    assert len({id(result) for result in results}) == 1
+    assert results[0].idempotency_key == "approval-command-001"
+    assert results[0].data == {"running": False, "scenario": "normal"}
+
+    with pytest.raises(ValueError, match="幂等键"):
+        await gateway.execute_command(
+            EquipmentCommand(
+                equipment_id=equipment_id,
+                command_type="restart",
+                parameters={},
+                idempotency_key="approval-command-001",
+            )
+        )
 
 
 def test_vibration_anomaly_creates_prediction_work_order_and_approval(
@@ -150,6 +187,10 @@ def test_high_risk_command_executes_only_after_human_approval(
     assert approved.json()["status"] == "approved"
     assert approved.json()["command_executed"] is True
     assert approved.json()["command_result"]["data"]["running"] is False
+    assert (
+        approved.json()["command_result"]["idempotency_key"]
+        == requested.json()["execution_key"]
+    )
     repeated = client.post(
         f"/api/v1/intelligence/approvals/{approval_id}/approve",
         headers=auth_supervisor,
@@ -158,6 +199,219 @@ def test_high_risk_command_executes_only_after_human_approval(
     assert repeated.status_code == 200
     assert repeated.json()["command_result"] == approved.json()["command_result"]
     simulator_controller.reset()
+
+
+def test_executing_approval_is_not_dispatched_again(
+    client, db, equipment, auth_supervisor
+):
+    client.post(
+        "/api/v1/intelligence/simulator/configure",
+        headers=auth_supervisor,
+        json={"equipment_ids": [equipment.id], "scenario": "normal", "seed": 17},
+    )
+    requested = client.post(
+        "/api/v1/intelligence/approvals",
+        headers=auth_supervisor,
+        json={
+            "equipment_id": equipment.id,
+            "command_type": "shutdown",
+            "risk_level": "high",
+            "risk_reason": "模拟命令下发期间进程中断后的未知状态",
+        },
+    )
+    approval = db.get(OperationApproval, requested.json()["id"])
+    assert approval is not None
+    approval.status = "executing"
+    db.commit()
+    repeated = client.post(
+        f"/api/v1/intelligence/approvals/{approval.id}/approve",
+        headers=auth_supervisor,
+        json={"note": "尝试重复下发"},
+    )
+
+    assert repeated.status_code == 409
+    assert "禁止自动重复下发" in repeated.json()["detail"]
+    db.refresh(approval)
+    assert approval.status == "executing"
+    assert approval.command_executed is False
+    assert approval.command_result is None
+    simulator_controller.reset()
+
+
+def test_timed_out_command_can_be_reconciled_as_not_executed_and_reapproved(
+    client, db, equipment, auth_supervisor
+):
+    client.post(
+        "/api/v1/intelligence/simulator/configure",
+        headers=auth_supervisor,
+        json={"equipment_ids": [equipment.id], "scenario": "normal", "seed": 19},
+    )
+    requested = client.post(
+        "/api/v1/intelligence/approvals",
+        headers=auth_supervisor,
+        json={
+            "equipment_id": equipment.id,
+            "command_type": "shutdown",
+            "risk_level": "high",
+            "risk_reason": "模拟设备命令执行超时",
+        },
+    )
+    approval = db.get(OperationApproval, requested.json()["id"])
+    assert approval is not None
+    old_execution_key = approval.execution_key
+    approval.status = "executing"
+    approval.execution_started_at = datetime.now(UTC) - timedelta(minutes=10)
+    approval.execution_attempt = 1
+    db.commit()
+
+    unknown = client.get(
+        "/api/v1/intelligence/approvals?status=execution_unknown",
+        headers=auth_supervisor,
+    )
+    assert unknown.status_code == 200
+    assert [item["id"] for item in unknown.json()] == [approval.id]
+
+    reconciled = client.post(
+        f"/api/v1/intelligence/approvals/{approval.id}/reconcile",
+        headers=auth_supervisor,
+        json={
+            "outcome": "confirmed_not_executed",
+            "note": "现场与 PLC 历史记录均确认命令未执行",
+            "observed_device_state": "设备仍在运行，运行位为 1",
+        },
+    )
+    assert reconciled.status_code == 200
+    assert reconciled.json()["status"] == "pending"
+    assert reconciled.json()["execution_key"] != old_execution_key
+    assert reconciled.json()["reconciliation_outcome"] == "confirmed_not_executed"
+
+    repeated_reconciliation = client.post(
+        f"/api/v1/intelligence/approvals/{approval.id}/reconcile",
+        headers=auth_supervisor,
+        json={
+            "outcome": "confirmed_not_executed",
+            "note": "重复核验不应再次生成执行键",
+            "observed_device_state": "设备仍在运行",
+        },
+    )
+    assert repeated_reconciliation.status_code == 409
+
+    reapproved = client.post(
+        f"/api/v1/intelligence/approvals/{approval.id}/approve",
+        headers=auth_supervisor,
+        json={"note": "重新确认维护窗口后批准"},
+    )
+    assert reapproved.status_code == 200
+    assert reapproved.json()["status"] == "approved"
+    assert (
+        reapproved.json()["command_result"]["idempotency_key"]
+        == reconciled.json()["execution_key"]
+    )
+
+    audit = client.get(
+        f"/api/v1/intelligence/approvals/{approval.id}/audit",
+        headers=auth_supervisor,
+    )
+    assert audit.status_code == 200
+    assert [event["event_type"] for event in audit.json()] == [
+        "execution_timed_out",
+        "reconciled_confirmed_not_executed",
+        "execution_claimed",
+        "execution_completed",
+    ]
+    audit_page = client.get(
+        f"/api/v1/intelligence/approvals/{approval.id}/audit?limit=2&offset=1",
+        headers=auth_supervisor,
+    )
+    assert [event["event_type"] for event in audit_page.json()] == [
+        "reconciled_confirmed_not_executed",
+        "execution_claimed",
+    ]
+    simulator_controller.reset()
+
+
+@pytest.mark.parametrize(
+    ("outcome", "expected_status", "command_executed"),
+    [
+        ("confirmed_executed", "approved", True),
+        ("confirmed_failed", "execution_failed", False),
+    ],
+)
+def test_timed_out_command_can_be_closed_by_manual_reconciliation(
+    client,
+    db,
+    equipment,
+    auth_supervisor,
+    outcome,
+    expected_status,
+    command_executed,
+):
+    requested = client.post(
+        "/api/v1/intelligence/approvals",
+        headers=auth_supervisor,
+        json={
+            "equipment_id": equipment.id,
+            "command_type": "shutdown",
+            "risk_level": "critical",
+            "risk_reason": "核验未知命令最终结果",
+        },
+    )
+    approval = db.get(OperationApproval, requested.json()["id"])
+    assert approval is not None
+    approval.status = "executing"
+    approval.execution_started_at = datetime.now(UTC) - timedelta(minutes=10)
+    approval.execution_attempt = 1
+    db.commit()
+
+    response = client.post(
+        f"/api/v1/intelligence/approvals/{approval.id}/reconcile",
+        headers=auth_supervisor,
+        json={
+            "outcome": outcome,
+            "note": "已由现场负责人和 PLC 历史记录双重确认",
+            "observed_device_state": "设备已停机，运行位为 0",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == expected_status
+    assert response.json()["command_executed"] is command_executed
+    assert response.json()["command_result"]["reconciled"] is True
+    assert (
+        db.query(OperationExecutionAudit).filter_by(approval_id=approval.id).count()
+        == 2
+    )
+
+
+def test_technician_cannot_reconcile_unknown_command(
+    client, db, equipment, auth_supervisor, auth_technician
+):
+    requested = client.post(
+        "/api/v1/intelligence/approvals",
+        headers=auth_supervisor,
+        json={
+            "equipment_id": equipment.id,
+            "command_type": "shutdown",
+            "risk_level": "high",
+            "risk_reason": "核验权限边界测试",
+        },
+    )
+    approval = db.get(OperationApproval, requested.json()["id"])
+    assert approval is not None
+    approval.status = "execution_unknown"
+    db.commit()
+
+    denied = client.post(
+        f"/api/v1/intelligence/approvals/{approval.id}/reconcile",
+        headers=auth_technician,
+        json={
+            "outcome": "confirmed_executed",
+            "note": "技术员尝试提交人工核验",
+            "observed_device_state": "设备已停机",
+        },
+    )
+
+    assert denied.status_code == 403
 
 
 def test_technician_cannot_approve_high_risk_operation(

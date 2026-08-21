@@ -8,8 +8,9 @@ revision。这里保留增量升级器作为当前迁移入口；降级只移除
 from __future__ import annotations
 
 import uuid
+from contextlib import nullcontext
 
-from sqlalchemy import Engine, inspect, text
+from sqlalchemy import Connection, Engine, inspect, text
 from sqlalchemy.schema import DropTable
 
 _CHECKLIST_CATEGORIES = {
@@ -39,6 +40,7 @@ INTELLIGENT_MAINTENANCE_TABLES = (
     "maintenance_recommendations",
     "spare_part_reservations",
     "operation_approvals",
+    "operation_execution_audits",
     "maintenance_verifications",
     "agent_runs",
     "tool_invocations",
@@ -53,13 +55,16 @@ INTELLIGENT_MAINTENANCE_TABLES = (
 _INTELLIGENCE_DROP_ORDER = tuple(reversed(INTELLIGENT_MAINTENANCE_TABLES))
 
 
-def upgrade_schema(engine: Engine) -> list[str]:
+def upgrade_schema(engine: Engine | Connection) -> list[str]:
     """升级到当前 head，返回本次实际应用的迁移名称。"""
     inspector = inspect(engine)
     table_names = set(inspector.get_table_names())
     applied: list[str] = []
 
-    with engine.begin() as connection:
+    transaction = (
+        nullcontext(engine) if isinstance(engine, Connection) else engine.begin()
+    )
+    with transaction as connection:
         if "work_order_checklist_items" in table_names:
             columns = {
                 column["name"]
@@ -125,7 +130,7 @@ def upgrade_schema(engine: Engine) -> list[str]:
             if rows:
                 applied.append("equipment.asset_uuid_backfill")
 
-            if engine.dialect.name == "postgresql":
+            if connection.dialect.name == "postgresql":
                 for enum_value in ("idle", "warning", "maintenance", "offline"):
                     connection.execute(
                         text(
@@ -147,6 +152,86 @@ def upgrade_schema(engine: Engine) -> list[str]:
                     )
                 )
                 applied.append("ml_dataset_versions.processed_sha256")
+
+        if "operation_approvals" in table_names:
+            approval_columns = {
+                column["name"]
+                for column in inspector.get_columns("operation_approvals")
+            }
+            if "execution_key" not in approval_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE operation_approvals "
+                        "ADD COLUMN execution_key VARCHAR(64)"
+                    )
+                )
+                approval_ids = connection.execute(
+                    text("SELECT id FROM operation_approvals")
+                ).scalars()
+                for approval_id in approval_ids:
+                    execution_key = uuid.uuid5(
+                        uuid.NAMESPACE_URL,
+                        f"industrial-maintenance-operation-approval:{approval_id}",
+                    ).hex
+                    connection.execute(
+                        text(
+                            "UPDATE operation_approvals "
+                            "SET execution_key = :execution_key WHERE id = :id"
+                        ),
+                        {"execution_key": execution_key, "id": approval_id},
+                    )
+                applied.append("operation_approvals.execution_key")
+            datetime_sql = (
+                "TIMESTAMP WITH TIME ZONE"
+                if connection.dialect.name == "postgresql"
+                else "DATETIME"
+            )
+            reconciliation_additions = {
+                "execution_started_at": datetime_sql,
+                "execution_attempt": "INTEGER NOT NULL DEFAULT 0",
+                "reconciliation_outcome": "VARCHAR(32)",
+                "reconciliation_note": "TEXT",
+                "observed_device_state": "TEXT",
+                "reconciled_by": "INTEGER",
+                "reconciled_at": datetime_sql,
+            }
+            reconciliation_added = False
+            for column_name, sql_type in reconciliation_additions.items():
+                if column_name not in approval_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE operation_approvals "
+                            f"ADD COLUMN {column_name} {sql_type}"
+                        )
+                    )
+                    reconciliation_added = True
+            if reconciliation_added and {"status", "reviewed_at"}.issubset(
+                approval_columns
+            ):
+                connection.execute(
+                    text(
+                        "UPDATE operation_approvals "
+                        "SET execution_started_at = reviewed_at "
+                        "WHERE status = 'executing' "
+                        "AND execution_started_at IS NULL"
+                    )
+                )
+            if reconciliation_added:
+                applied.append("operation_approvals.execution_reconciliation")
+            connection.execute(
+                text(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "ix_operation_approvals_execution_key "
+                    "ON operation_approvals (execution_key)"
+                )
+            )
+            connection.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "ix_operation_approvals_execution_started_at "
+                    "ON operation_approvals (execution_started_at)"
+                )
+            )
 
     # 集中导入模型，确保 metadata 包含所有旧工单与智能运维表。
     import app.models  # noqa: F401

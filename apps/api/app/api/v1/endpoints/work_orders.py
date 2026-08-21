@@ -1,11 +1,12 @@
 """工单管理接口：状态流转、检查清单、维修记录、工时、备件、完工验收、报告。"""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.ai.copilot import generate_report as ai_generate_report
 from app.core.deps import get_current_user, supervisor_or_admin, technician_or_above
@@ -15,10 +16,7 @@ from app.models.base import (
     EquipmentStatusEnum,
     FaultReportStatusEnum,
     KnowledgeCategoryEnum,
-    MaintenanceLogTypeEnum,
-    PriorityEnum,
     WorkOrderStatusEnum,
-    WorkOrderTypeEnum,
 )
 from app.models.equipment import Equipment, FaultCode, SparePart
 from app.models.knowledge import AcceptanceRecord, KnowledgeArticle
@@ -51,8 +49,8 @@ from app.schemas.workorder import (
     MaintenanceLogUpdate,
     RejectRequest,
     ReportGenerateResponse,
-    ReportOut,
     ReportSectionOut,
+    SafetyConfirmationRequest,
     SparePartUsageCreate,
     SparePartUsageOut,
     SparePartUsageUpdate,
@@ -62,6 +60,7 @@ from app.schemas.workorder import (
     WorkOrderOut,
     WorkOrderUpdate,
 )
+from app.services.work_order_codes import generate_work_order_code
 from app.services.workorder_service import change_status
 from app.storage.backend import get_storage
 
@@ -86,8 +85,17 @@ DEFAULT_CHECKLIST: list[dict] = [
 ]
 
 _HIGH_RISK_KEYWORDS = [
-    "高压", "电气", "液压", "气压", "高温", "旋转",
-    "带电", "短接", "短路", "绕过", "联锁",
+    "高压",
+    "电气",
+    "液压",
+    "气压",
+    "高温",
+    "旋转",
+    "带电",
+    "短接",
+    "短路",
+    "绕过",
+    "联锁",
 ]
 
 # 危险操作禁止提示
@@ -115,10 +123,49 @@ def _require_execution_access(wo: WorkOrder, user: User) -> None:
         raise bad_request("当前工单状态不可修改维修执行记录")
 
 
-def _gen_code(db: Session) -> str:
-    year = datetime.now(timezone.utc).year
-    count = db.query(WorkOrder).filter(WorkOrder.code.like(f"WO-{year}-%")).count()
-    return f"WO-{year}-{count + 1:04d}"
+def _is_high_risk(wo: WorkOrder) -> bool:
+    risk_text = f"{wo.safety_risk or ''} {wo.fault_description or ''}"
+    return bool((wo.safety_risk or "").strip()) or any(
+        keyword in risk_text for keyword in _HIGH_RISK_KEYWORDS
+    )
+
+
+def _require_safety_confirmation(
+    wo: WorkOrder, payload: SafetyConfirmationRequest | None
+) -> str | None:
+    if not _is_high_risk(wo):
+        return None
+
+    if payload is None or not payload.confirmed or len(payload.note.strip()) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "HIGH_RISK_SAFETY_CONFIRMATION_REQUIRED",
+                "message": "高风险工单开始前必须确认安全措施，并填写至少 8 个字符的现场确认说明",
+            },
+        )
+
+    required_items = [
+        item
+        for item in wo.checklist_items
+        if item.category == "safety" and item.is_required
+    ]
+    incomplete_items = [
+        item.content
+        for item in required_items
+        if not item.is_completed or not item.completed_by or not item.completed_at
+    ]
+    if not required_items or incomplete_items:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "HIGH_RISK_SAFETY_CHECKLIST_INCOMPLETE",
+                "message": "高风险工单的必做安全检查项尚未全部完成",
+                "missing_items": incomplete_items or ["安全检查清单未配置"],
+            },
+        )
+
+    return f"高风险作业安全确认：{payload.note.strip()}"
 
 
 def _safety_text(wo: WorkOrder) -> str | None:
@@ -142,9 +189,6 @@ def _to_out(wo: WorkOrder) -> WorkOrderOut:
         if eq:
             eq_name, eq_code = eq.name, eq.code
     fault_code = None
-    if wo.fault_code_id:
-        fc = wo.fault_code if hasattr(wo, "fault_code") else None
-        # 关系未建立时通过 id 查不到，这里简化处理
     creator_name = wo.creator.full_name if wo.creator else None
     assignee_name = wo.assignee.full_name if wo.assignee else None
     return WorkOrderOut(
@@ -170,6 +214,7 @@ def _to_out(wo: WorkOrder) -> WorkOrderOut:
         actual_start_at=wo.actual_start_at,
         actual_end_at=wo.actual_end_at,
         safety_risk=wo.safety_risk,
+        requires_safety_confirmation=_is_high_risk(wo),
         ai_diagnosis_summary=wo.ai_diagnosis_summary,
         maintenance_steps=wo.maintenance_steps,
         acceptance_criteria=wo.acceptance_criteria,
@@ -195,8 +240,10 @@ def _to_detail(db: Session, wo: WorkOrder) -> WorkOrderDetail:
         f = db.get(FaultCode, wo.fault_code_id)
         fc = f.code if f else None
     base["fault_code"] = fc
-    base["checklist_items"] = [ChecklistItemOut.model_validate(c) for c in wo.checklist_items]
-    base["logs"] = [MaintenanceLogOut.model_validate(l) for l in wo.logs]
+    base["checklist_items"] = [
+        ChecklistItemOut.model_validate(c) for c in wo.checklist_items
+    ]
+    base["logs"] = [MaintenanceLogOut.model_validate(log) for log in wo.logs]
     base["labor_entries"] = [LaborEntryOut.model_validate(e) for e in wo.labor_entries]
     base["spare_parts"] = [SparePartUsageOut.model_validate(s) for s in wo.spare_parts]
     base["status_history"] = [
@@ -226,7 +273,11 @@ def list_work_orders(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    q = db.query(WorkOrder)
+    q = db.query(WorkOrder).options(
+        joinedload(WorkOrder.equipment),
+        joinedload(WorkOrder.creator),
+        joinedload(WorkOrder.assignee),
+    )
     if status_filter:
         q = q.filter(WorkOrder.status == status_filter)
     if priority:
@@ -238,16 +289,24 @@ def list_work_orders(
     if mine:
         q = q.filter(WorkOrder.assignee_id == user.id)
     if keyword:
-        q = q.filter(WorkOrder.title.contains(keyword) | WorkOrder.code.contains(keyword))
+        q = q.filter(
+            WorkOrder.title.contains(keyword) | WorkOrder.code.contains(keyword)
+        )
     q = q.order_by(WorkOrder.created_at.desc())
     items, total = paginate(q, page, page_size)
-    return PageOut(items=[_to_out(w) for w in items], total=total, page=page, page_size=page_size)
+    return PageOut(
+        items=[_to_out(w) for w in items], total=total, page=page, page_size=page_size
+    )
 
 
 @router.post("", response_model=WorkOrderDetail)
-def create_work_order(payload: WorkOrderCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def create_work_order(
+    payload: WorkOrderCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     wo = WorkOrder(
-        code=_gen_code(db),
+        code=generate_work_order_code(),
         **payload.model_dump(),
         status=WorkOrderStatusEnum.pending_dispatch,
         created_by_id=user.id,
@@ -256,7 +315,9 @@ def create_work_order(payload: WorkOrderCreate, db: Session = Depends(get_db), u
     # 安全风险识别
     risk_text = (payload.fault_description or "") + (payload.safety_risk or "")
     if any(k in risk_text for k in _HIGH_RISK_KEYWORDS):
-        wo.safety_risk = (wo.safety_risk or "") + "（注意：涉及高危风险，维修前必须确认安全措施）"
+        wo.safety_risk = (
+            wo.safety_risk or ""
+        ) + "（注意：涉及高危风险，维修前必须确认安全措施）"
     db.add(wo)
     db.flush()
     db.add(
@@ -265,26 +326,30 @@ def create_work_order(payload: WorkOrderCreate, db: Session = Depends(get_db), u
             from_status=None,
             to_status=WorkOrderStatusEnum.pending_dispatch.value,
             changed_by=user.id,
-            changed_at=datetime.now(timezone.utc),
+            changed_at=datetime.now(UTC),
             remark="手工创建工单",
         )
     )
     # 生成默认检查清单（按类别）
     for i, item in enumerate(DEFAULT_CHECKLIST):
-        db.add(WorkOrderChecklistItem(
-            work_order_id=wo.id,
-            category=item["category"],
-            content=item["content"],
-            order=i,
-            is_required=item["is_required"],
-        ))
+        db.add(
+            WorkOrderChecklistItem(
+                work_order_id=wo.id,
+                category=item["category"],
+                content=item["content"],
+                order=i,
+                is_required=item["is_required"],
+            )
+        )
     db.commit()
     db.refresh(wo)
     return _to_detail(db, wo)
 
 
 @router.get("/{wo_id}", response_model=WorkOrderDetail)
-def get_work_order(wo_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_work_order(
+    wo_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -292,7 +357,12 @@ def get_work_order(wo_id: int, db: Session = Depends(get_db), _=Depends(get_curr
 
 
 @router.put("/{wo_id}", response_model=WorkOrderDetail)
-def update_work_order(wo_id: int, payload: WorkOrderUpdate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def update_work_order(
+    wo_id: int,
+    payload: WorkOrderUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -308,7 +378,12 @@ def update_work_order(wo_id: int, payload: WorkOrderUpdate, db: Session = Depend
 
 
 @router.post("/{wo_id}/assign", response_model=WorkOrderDetail)
-def assign(wo_id: int, payload: AssignRequest, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def assign(
+    wo_id: int,
+    payload: AssignRequest,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -346,7 +421,7 @@ def assign(wo_id: int, payload: AssignRequest, db: Session = Depends(get_db), us
             work_order_id=wo.id,
             assignee_id=payload.assignee_id,
             assigned_by=user.id,
-            assigned_at=datetime.now(timezone.utc),
+            assigned_at=datetime.now(UTC),
             is_current=True,
         )
     )
@@ -357,7 +432,9 @@ def assign(wo_id: int, payload: AssignRequest, db: Session = Depends(get_db), us
 
 
 @router.post("/{wo_id}/accept", response_model=WorkOrderDetail)
-def accept(wo_id: int, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def accept(
+    wo_id: int, db: Session = Depends(get_db), user=Depends(technician_or_above)
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -369,13 +446,24 @@ def accept(wo_id: int, db: Session = Depends(get_db), user=Depends(technician_or
 
 
 @router.post("/{wo_id}/start", response_model=WorkOrderDetail)
-def start(wo_id: int, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def start(
+    wo_id: int,
+    payload: SafetyConfirmationRequest | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
     _require_assignee(wo, user)
-    # 高风险工单必须确认安全措施（通过请求头 X-Safety-Confirmed）
-    change_status(db, wo, WorkOrderStatusEnum.in_progress, user.id)
+    safety_remark = _require_safety_confirmation(wo, payload)
+    change_status(
+        db,
+        wo,
+        WorkOrderStatusEnum.in_progress,
+        user.id,
+        remark=safety_remark,
+    )
     db.commit()
     db.refresh(wo)
     return _to_detail(db, wo)
@@ -394,18 +482,32 @@ def pause(wo_id: int, db: Session = Depends(get_db), user=Depends(technician_or_
 
 
 @router.post("/{wo_id}/resume", response_model=WorkOrderDetail)
-def resume(wo_id: int, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def resume(
+    wo_id: int,
+    payload: SafetyConfirmationRequest | None = None,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
     _require_assignee(wo, user)
-    change_status(db, wo, WorkOrderStatusEnum.in_progress, user.id)
+    safety_remark = _require_safety_confirmation(wo, payload)
+    change_status(
+        db,
+        wo,
+        WorkOrderStatusEnum.in_progress,
+        user.id,
+        remark=safety_remark,
+    )
     db.commit()
     db.refresh(wo)
     return _to_detail(db, wo)
 
 
-def _validate_completion(wo: WorkOrder, payload: SubmitRequest, db: Session) -> list[str]:
+def _validate_completion(
+    wo: WorkOrder, payload: SubmitRequest, db: Session
+) -> list[str]:
     """验证完工条件，返回缺失项列表。"""
     missing: list[str] = []
 
@@ -436,9 +538,7 @@ def _validate_completion(wo: WorkOrder, payload: SubmitRequest, db: Session) -> 
         missing.append("test_step")
 
     # 高风险工单至少一张完工/测试照片
-    has_risk = (wo.safety_risk and any(k in (wo.safety_risk or "") for k in _HIGH_RISK_KEYWORDS)) or \
-               (wo.fault_description and any(k in (wo.fault_description or "") for k in _HIGH_RISK_KEYWORDS))
-    if has_risk:
+    if _is_high_risk(wo):
         photos = payload.completion_photos or wo.completion_photos or []
         # 也从维修日志中检查照片
         log_photos: list[str] = []
@@ -452,20 +552,29 @@ def _validate_completion(wo: WorkOrder, payload: SubmitRequest, db: Session) -> 
 
 
 @router.post("/{wo_id}/submit", response_model=WorkOrderDetail)
-def submit(wo_id: int, payload: SubmitRequest, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def submit(
+    wo_id: int,
+    payload: SubmitRequest,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
     if wo.status == WorkOrderStatusEnum.pending_acceptance:
         raise conflict("工单已提交，请等待验收")
     if wo.assignee_id != user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有被分派工程师可以提交完工")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="只有被分派工程师可以提交完工"
+        )
     # 完工校验
     missing = _validate_completion(wo, payload, db)
     if missing:
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            content=CompletionValidationError(missing_requirements=missing).model_dump(),
+            content=CompletionValidationError(
+                missing_requirements=missing
+            ).model_dump(),
         )
     wo.root_cause = payload.root_cause
     wo.action_taken = payload.action_taken
@@ -488,6 +597,7 @@ def submit(wo_id: int, payload: SubmitRequest, db: Session = Depends(get_db), us
 def _sync_fault_report_status(db: Session, fault_report_id: int, status: str) -> None:
     """同步故障上报状态。"""
     from app.models.fault import FaultReport
+
     fr = db.get(FaultReport, fault_report_id)
     if fr:
         fr.status = FaultReportStatusEnum(status)
@@ -496,9 +606,13 @@ def _sync_fault_report_status(db: Session, fault_report_id: int, status: str) ->
 def _create_knowledge_candidate(db: Session, wo: WorkOrder) -> None:
     """验收通过后自动生成知识库候选条目。"""
     # 防止重复生成
-    existing = db.query(KnowledgeArticle).filter(
-        KnowledgeArticle.source == f"work_order_{wo.id}",
-    ).first()
+    existing = (
+        db.query(KnowledgeArticle)
+        .filter(
+            KnowledgeArticle.source == f"work_order_{wo.id}",
+        )
+        .first()
+    )
     if existing:
         return
     eq_name = ""
@@ -525,6 +639,7 @@ def _create_knowledge_candidate(db: Session, wo: WorkOrder) -> None:
     ]
     # 剔除联系方式等敏感信息
     import re
+
     cleaned = "\n\n".join(content_parts)
     cleaned = re.sub(r"1[3-9]\d{9}", "***", cleaned)
     cleaned = re.sub(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+", "***", cleaned)
@@ -542,7 +657,12 @@ def _create_knowledge_candidate(db: Session, wo: WorkOrder) -> None:
 
 
 @router.post("/{wo_id}/approve", response_model=WorkOrderDetail)
-def approve(wo_id: int, payload: AcceptRequest = AcceptRequest(), db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def approve(
+    wo_id: int,
+    payload: AcceptRequest = AcceptRequest(),
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -550,19 +670,36 @@ def approve(wo_id: int, payload: AcceptRequest = AcceptRequest(), db: Session = 
     if wo.status == WorkOrderStatusEnum.completed:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={"code": "WORK_ORDER_ALREADY_ACCEPTED", "message": "该工单已完成验收", "work_order_id": wo_id},
+            content={
+                "code": "WORK_ORDER_ALREADY_ACCEPTED",
+                "message": "该工单已完成验收",
+                "work_order_id": wo_id,
+            },
         )
     if wo.status != WorkOrderStatusEnum.pending_acceptance:
         raise bad_request("只能验收待验收状态的工单")
-    change_status(db, wo, WorkOrderStatusEnum.completed, user.id, remark=payload.acceptance_notes or "验收通过")
+    change_status(
+        db,
+        wo,
+        WorkOrderStatusEnum.completed,
+        user.id,
+        remark=payload.acceptance_notes or "验收通过",
+    )
     # 设备状态联动
     if wo.equipment_id:
         eq = db.get(Equipment, wo.equipment_id)
         if eq:
             eq.status = EquipmentStatusEnum.running
-            eq.last_maintenance_at = datetime.now(timezone.utc).date()
+            eq.last_maintenance_at = datetime.now(UTC).date()
     # 验收记录
-    db.add(AcceptanceRecord(work_order_id=wo.id, result="approved", reviewer_id=user.id, remark=payload.acceptance_notes or "验收通过"))
+    db.add(
+        AcceptanceRecord(
+            work_order_id=wo.id,
+            result="approved",
+            reviewer_id=user.id,
+            remark=payload.acceptance_notes or "验收通过",
+        )
+    )
     # 故障上报状态联动
     if wo.fault_report_id:
         _sync_fault_report_status(db, wo.fault_report_id, "closed")
@@ -598,25 +735,49 @@ def approve(wo_id: int, payload: AcceptRequest = AcceptRequest(), db: Session = 
 
 
 def _next_report_version(db: Session, wo_id: int) -> int:
-    max_v = db.query(WorkOrderReport).filter(WorkOrderReport.work_order_id == wo_id).count()
+    max_v = (
+        db.query(WorkOrderReport).filter(WorkOrderReport.work_order_id == wo_id).count()
+    )
     return max_v + 1
 
 
 @router.post("/{wo_id}/reject", response_model=WorkOrderDetail)
-def reject(wo_id: int, payload: RejectRequest, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def reject(
+    wo_id: int,
+    payload: RejectRequest,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
     if wo.status == WorkOrderStatusEnum.completed:
         return JSONResponse(
             status_code=status.HTTP_409_CONFLICT,
-            content={"code": "WORK_ORDER_ALREADY_ACCEPTED", "message": "该工单已完成验收", "work_order_id": wo_id},
+            content={
+                "code": "WORK_ORDER_ALREADY_ACCEPTED",
+                "message": "该工单已完成验收",
+                "work_order_id": wo_id,
+            },
         )
     if not payload.remark or not payload.remark.strip():
         raise bad_request("退回原因不能为空")
-    change_status(db, wo, WorkOrderStatusEnum.returned, user.id, remark=f"验收退回：{payload.remark}")
+    change_status(
+        db,
+        wo,
+        WorkOrderStatusEnum.returned,
+        user.id,
+        remark=f"验收退回：{payload.remark}",
+    )
     wo.rejection_reason = payload.remark
-    db.add(AcceptanceRecord(work_order_id=wo.id, result="rejected", reviewer_id=user.id, remark=payload.remark))
+    db.add(
+        AcceptanceRecord(
+            work_order_id=wo.id,
+            result="rejected",
+            reviewer_id=user.id,
+            remark=payload.remark,
+        )
+    )
     # 故障上报状态保持处理中
     if wo.fault_report_id:
         _sync_fault_report_status(db, wo.fault_report_id, "converted")
@@ -626,7 +787,9 @@ def reject(wo_id: int, payload: RejectRequest, db: Session = Depends(get_db), us
 
 
 @router.post("/{wo_id}/cancel", response_model=WorkOrderDetail)
-def cancel(wo_id: int, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def cancel(
+    wo_id: int, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -640,7 +803,13 @@ def cancel(wo_id: int, db: Session = Depends(get_db), user=Depends(supervisor_or
 
 
 @router.put("/{wo_id}/checklist/{item_id}", response_model=WorkOrderDetail)
-def update_checklist_item(wo_id: int, item_id: int, payload: ChecklistItemUpdate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def update_checklist_item(
+    wo_id: int,
+    item_id: int,
+    payload: ChecklistItemUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     item = db.get(WorkOrderChecklistItem, item_id)
     if not item or item.work_order_id != wo_id:
         raise not_found("检查项不存在")
@@ -650,7 +819,7 @@ def update_checklist_item(wo_id: int, item_id: int, payload: ChecklistItemUpdate
     _require_execution_access(wo, user)
     if payload.is_completed is not None:
         item.is_completed = payload.is_completed
-        item.completed_at = datetime.now(timezone.utc) if payload.is_completed else None
+        item.completed_at = datetime.now(UTC) if payload.is_completed else None
         item.completed_by = user.id if payload.is_completed else None
     if payload.remark is not None:
         item.remark = payload.remark
@@ -662,7 +831,12 @@ def update_checklist_item(wo_id: int, item_id: int, payload: ChecklistItemUpdate
 
 
 @router.post("/{wo_id}/logs", response_model=MaintenanceLogOut)
-def add_log(wo_id: int, payload: MaintenanceLogCreate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def add_log(
+    wo_id: int,
+    payload: MaintenanceLogCreate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -675,7 +849,7 @@ def add_log(wo_id: int, payload: MaintenanceLogCreate, db: Session = Depends(get
         photos=payload.photos,
         operator_id=user.id,
         operator_name=user.full_name,
-        logged_at=payload.logged_at or datetime.now(timezone.utc),
+        logged_at=payload.logged_at or datetime.now(UTC),
     )
     db.add(log)
     db.commit()
@@ -684,7 +858,13 @@ def add_log(wo_id: int, payload: MaintenanceLogCreate, db: Session = Depends(get
 
 
 @router.put("/{wo_id}/logs/{log_id}", response_model=MaintenanceLogOut)
-def update_log(wo_id: int, log_id: int, payload: MaintenanceLogUpdate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def update_log(
+    wo_id: int,
+    log_id: int,
+    payload: MaintenanceLogUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     log = db.get(MaintenanceLog, log_id)
     if not log or log.work_order_id != wo_id:
         raise not_found("维修记录不存在")
@@ -709,7 +889,12 @@ def update_log(wo_id: int, log_id: int, payload: MaintenanceLogUpdate, db: Sessi
 
 
 @router.post("/{wo_id}/labor", response_model=LaborEntryOut)
-def add_labor(wo_id: int, payload: LaborEntryCreate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def add_labor(
+    wo_id: int,
+    payload: LaborEntryCreate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -717,7 +902,11 @@ def add_labor(wo_id: int, payload: LaborEntryCreate, db: Session = Depends(get_d
     # 工时校验
     if payload.hours is not None and payload.hours <= 0:
         raise bad_request("工时必须大于 0")
-    if payload.started_at and payload.ended_at and payload.ended_at <= payload.started_at:
+    if (
+        payload.started_at
+        and payload.ended_at
+        and payload.ended_at <= payload.started_at
+    ):
         raise bad_request("结束时间不得早于开始时间")
     entry = LaborEntry(
         work_order_id=wo_id,
@@ -736,7 +925,13 @@ def add_labor(wo_id: int, payload: LaborEntryCreate, db: Session = Depends(get_d
 
 
 @router.put("/{wo_id}/labor/{entry_id}", response_model=LaborEntryOut)
-def update_labor(wo_id: int, entry_id: int, payload: LaborEntryUpdate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def update_labor(
+    wo_id: int,
+    entry_id: int,
+    payload: LaborEntryUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     entry = db.get(LaborEntry, entry_id)
     if not entry or entry.work_order_id != wo_id:
         raise not_found("工时记录不存在")
@@ -765,7 +960,12 @@ def update_labor(wo_id: int, entry_id: int, payload: LaborEntryUpdate, db: Sessi
 
 
 @router.delete("/{wo_id}/labor/{entry_id}", response_model=OkResponse)
-def delete_labor(wo_id: int, entry_id: int, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def delete_labor(
+    wo_id: int,
+    entry_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     entry = db.get(LaborEntry, entry_id)
     if not entry or entry.work_order_id != wo_id:
         raise not_found("工时记录不存在")
@@ -782,7 +982,12 @@ def delete_labor(wo_id: int, entry_id: int, db: Session = Depends(get_db), user=
 
 
 @router.post("/{wo_id}/spare-parts", response_model=SparePartUsageOut)
-def add_spare_part(wo_id: int, payload: SparePartUsageCreate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def add_spare_part(
+    wo_id: int,
+    payload: SparePartUsageCreate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -810,7 +1015,13 @@ def add_spare_part(wo_id: int, payload: SparePartUsageCreate, db: Session = Depe
 
 
 @router.put("/{wo_id}/spare-parts/{record_id}", response_model=SparePartUsageOut)
-def update_spare_part(wo_id: int, record_id: int, payload: SparePartUsageUpdate, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def update_spare_part(
+    wo_id: int,
+    record_id: int,
+    payload: SparePartUsageUpdate,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     record = db.get(WorkOrderSparePart, record_id)
     if not record or record.work_order_id != wo_id:
         raise not_found("备件记录不存在")
@@ -838,7 +1049,12 @@ def update_spare_part(wo_id: int, record_id: int, payload: SparePartUsageUpdate,
 
 
 @router.delete("/{wo_id}/spare-parts/{record_id}", response_model=OkResponse)
-def delete_spare_part(wo_id: int, record_id: int, db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def delete_spare_part(
+    wo_id: int,
+    record_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     record = db.get(WorkOrderSparePart, record_id)
     if not record or record.work_order_id != wo_id:
         raise not_found("备件记录不存在")
@@ -855,7 +1071,12 @@ def delete_spare_part(wo_id: int, record_id: int, db: Session = Depends(get_db),
 
 
 @router.post("/{wo_id}/attachments")
-def upload_attachment(wo_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(technician_or_above)):
+def upload_attachment(
+    wo_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user=Depends(technician_or_above),
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -863,8 +1084,8 @@ def upload_attachment(wo_id: int, file: UploadFile = File(...), db: Session = De
     storage = get_storage()
     try:
         rel_path, url, size, ftype = storage.save(file, subdir=f"workorders/{wo_id}")
-    except ValueError as e:
-        raise bad_request(str(e))
+    except ValueError as exc:
+        raise bad_request(str(exc)) from exc
     att = Attachment(
         work_order_id=wo_id,
         file_name=file.filename,
@@ -888,10 +1109,15 @@ def get_report(wo_id: int, db: Session = Depends(get_db), _=Depends(get_current_
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
-    report = db.query(WorkOrderReport).filter(
-        WorkOrderReport.work_order_id == wo_id,
-        WorkOrderReport.is_current == True,  # noqa: E712
-    ).order_by(WorkOrderReport.created_at.desc()).first()
+    report = (
+        db.query(WorkOrderReport)
+        .filter(
+            WorkOrderReport.work_order_id == wo_id,
+            WorkOrderReport.is_current == True,  # noqa: E712
+        )
+        .order_by(WorkOrderReport.created_at.desc())
+        .first()
+    )
     if not report:
         # 如果没有已持久化报告，尝试实时生成
         try:
@@ -900,14 +1126,20 @@ def get_report(wo_id: int, db: Session = Depends(get_db), _=Depends(get_current_
                 work_order_id=wo.id,
                 work_order_code=wo.code,
                 summary=result.summary,
-                sections=[ReportSectionOut(title=s.title, content=s.content) for s in result.sections],
+                sections=[
+                    ReportSectionOut(title=s.title, content=s.content)
+                    for s in result.sections
+                ],
                 generation_method="template" if result.is_mock else "ai",
                 version=1,
                 is_mock=result.is_mock,
             )
         except Exception:
-            raise not_found("该工单暂无报告，请先验收完成")
-    sections_out = [ReportSectionOut(title=s.get("title", ""), content=s.get("content", "")) for s in (report.sections or [])]
+            raise not_found("该工单暂无报告，请先验收完成") from None
+    sections_out = [
+        ReportSectionOut(title=s.get("title", ""), content=s.get("content", ""))
+        for s in (report.sections or [])
+    ]
     return ReportGenerateResponse(
         work_order_id=wo.id,
         work_order_code=wo.code,
@@ -920,7 +1152,9 @@ def get_report(wo_id: int, db: Session = Depends(get_db), _=Depends(get_current_
 
 
 @router.post("/{wo_id}/report/regenerate", response_model=ReportGenerateResponse)
-def regenerate_report(wo_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def regenerate_report(
+    wo_id: int, db: Session = Depends(get_db), user=Depends(get_current_user)
+):
     wo = db.get(WorkOrder, wo_id)
     if not wo:
         raise not_found("工单不存在")
@@ -948,7 +1182,9 @@ def regenerate_report(wo_id: int, db: Session = Depends(get_db), user=Depends(ge
     )
     db.add(persisted)
     db.commit()
-    sections_out = [ReportSectionOut(title=s.title, content=s.content) for s in result.sections]
+    sections_out = [
+        ReportSectionOut(title=s.title, content=s.content) for s in result.sections
+    ]
     return ReportGenerateResponse(
         work_order_id=wo.id,
         work_order_code=wo.code,

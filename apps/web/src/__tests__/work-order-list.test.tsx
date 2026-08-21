@@ -80,12 +80,13 @@ describe('WorkOrderList', () => {
     });
   });
 
-  it('展示状态筛选按钮', () => {
+  it('展示状态筛选按钮', async () => {
     render(<WorkOrderList />);
     expect(screen.getByText('全部')).toBeInTheDocument();
     expect(screen.getByText('待分派')).toBeInTheDocument();
     expect(screen.getByText('已分派')).toBeInTheDocument();
     expect(screen.getAllByText('处理中').length).toBeGreaterThanOrEqual(1);
+    expect(await screen.findByText('CNC主轴异响')).toBeInTheDocument();
   });
 
   it('点击状态筛选重新加载', async () => {
@@ -131,6 +132,7 @@ describe('WorkOrderList', () => {
     render(<WorkOrderList />);
     await user.click(screen.getByText('新建工单'));
     expect(mockPush).toHaveBeenCalledWith('/fault-reports/new');
+    expect(await screen.findByText('CNC主轴异响')).toBeInTheDocument();
   });
 
   it('主管看到待分派工单的分派按钮', async () => {
@@ -162,6 +164,7 @@ describe('WorkOrderList', () => {
     });
     render(<WorkOrderList />);
     expect(screen.getByText('仅看我的')).toBeInTheDocument();
+    expect(await screen.findByText('CNC主轴异响')).toBeInTheDocument();
   });
 
   it('点击仅看我的切换筛选', async () => {
