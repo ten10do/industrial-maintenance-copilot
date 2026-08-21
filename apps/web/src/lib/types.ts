@@ -406,3 +406,57 @@ export interface GatewaySyncResult {
   skipped_details: string[];
   duration_ms: number;
 }
+
+// ============ OPC UA DataChange Subscription ============
+
+export interface GatewaySubscriptionRow {
+  id: number;
+  gateway_id: number;
+  node_id: string;
+  sampling_interval: number;
+  status: string;
+  last_event_at: string | null;
+  event_count: number;
+}
+
+export interface GatewaySubscriptionStatus {
+  ok: boolean;
+  status: string;
+  subscription_status: string;
+  sampling_interval_ms: number;
+  active_nodes: string[];
+  buffer_pending: number;
+  event_totals: Record<string, number>;
+  last_event_at: string | null;
+  last_event: string | null;
+  error: string | null;
+  read_only: boolean;
+  rows: GatewaySubscriptionRow[];
+}
+
+export interface SubscriptionActionResult {
+  ok: boolean;
+  status: string;
+  already_active?: boolean;
+  error?: string | null;
+}
+
+// ============ Industrial Alarms ============
+
+export interface IndustrialAlarm {
+  id: number;
+  equipment_id: number;
+  severity: 'WARNING' | 'CRITICAL';
+  message: string;
+  source: string;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+  cleared_at: string | null;
+  created_at: string;
+}
+
+export interface IndustrialAlarmList {
+  items: IndustrialAlarm[];
+  total: number;
+  read_only_source: boolean;
+}
