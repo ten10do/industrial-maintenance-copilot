@@ -150,3 +150,44 @@ class AlarmAckOut(BaseModel):
     id: int
     acknowledged: bool
     acknowledged_at: str | None = None
+
+
+# ============ Alarm Intelligence（AI-assisted analysis，仅建议） ============
+
+
+class AlarmAnalysisOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    alarm_id: int
+    correlation_group_id: str | None
+    summary: str
+    root_cause_hypothesis: str
+    contributing_factors: list[str]
+    evidence: dict[str, Any]
+    citations: list[dict[str, Any]]
+    confidence: float
+    recommended_actions: list[str]
+    suggested_priority: str
+    related_work_order_id: int | None
+    requires_human_review: bool
+    model_version: str
+    is_mock: bool
+    created_at: datetime
+
+
+class CorrelationGroupOut(BaseModel):
+    group_id: str
+    reason: str
+    alarm_ids: list[int]
+    equipment_ids: list[int]
+    severity: str
+    window_start: datetime | None
+    window_end: datetime | None
+    size: int
+
+
+class CorrelateOut(BaseModel):
+    groups: list[CorrelationGroupOut]
+    total_alarms: int
+    read_only_source: bool = True

@@ -240,3 +240,99 @@ def analyze_root_cause(
         citations=citations,
         confidence=round(confidence, 2),
     )
+
+
+# ----------------------------------------------------------------------
+# Maintenance Decision Support（仅建议，不执行）
+# ----------------------------------------------------------------------
+
+HUMAN_APPROVAL_DISCLAIMER: Final = (
+    "以上为 AI 辅助分析建议，仅供人工决策参考；"
+    "任何设备操作必须通过智能工单与 Human Approval（OperationApproval）审批流执行，"
+    "本分析不会自动创建或执行任何控制。"
+)
+
+
+@dataclass(slots=True)
+class DecisionSupportResult:
+    """维护决策支持：建议行动 + 优先级建议 + 关联工单提示。"""
+
+    recommended_actions: list[str] = field(default_factory=list)
+    suggested_priority: str = "P3"
+    related_work_orders: list[dict[str, Any]] = field(default_factory=list)
+    requires_human_review: bool = True
+    disclaimer: str = HUMAN_APPROVAL_DISCLAIMER
+
+
+def build_decision_support(
+    db: Session,
+    *,
+    severity: str,
+    fault_type: str | None,
+    confidence: float,
+    equipment_id: int,
+) -> DecisionSupportResult:
+    """把根因假设转化为维护行动建议（只读查询，不创建任何对象）。"""
+    from app.models.base import WorkOrderStatusEnum
+    from app.models.workorder import WorkOrder
+
+    guidance = FAULT_GUIDANCE.get(fault_type or "", None)
+    if guidance and fault_type:
+        actions = [item for item in str(guidance[1]).split("；") if item]
+        skills = "、".join(guidance[2]) if guidance[2] else ""
+        parts = "、".join(
+            part.get("name") if isinstance(part, dict) else str(part)
+            for part in (guidance[3] or [])
+        )
+        if skills:
+            actions.append(f"建议技能配置：{skills}")
+        if parts:
+            actions.append(f"建议备件预核：{parts}")
+    else:
+        actions = [
+            "安排现场点检并记录频谱/趋势数据",
+            "结合历史工单与知识库案例复核根因",
+        ]
+    actions.append("处理前确认现场安全条件（LOTO）")
+
+    if severity == "CRITICAL":
+        suggested_priority = "P1" if confidence >= 0.7 else "P2"
+    elif severity == "WARNING":
+        suggested_priority = "P3"
+    else:
+        suggested_priority = "P4"
+
+    open_statuses = [
+        WorkOrderStatusEnum.pending_dispatch,
+        WorkOrderStatusEnum.assigned,
+        WorkOrderStatusEnum.accepted,
+        WorkOrderStatusEnum.in_progress,
+        WorkOrderStatusEnum.paused,
+    ]
+    related_rows = (
+        db.query(WorkOrder)
+        .filter(
+            WorkOrder.equipment_id == equipment_id,
+            WorkOrder.status.in_(open_statuses),
+        )
+        .order_by(WorkOrder.created_at.desc())
+        .limit(3)
+        .all()
+    )
+    related = [
+        {
+            "work_order_id": row.id,
+            "code": row.code,
+            "title": row.title,
+            "status": row.status.value if row.status else None,
+        }
+        for row in related_rows
+    ]
+
+    return DecisionSupportResult(
+        recommended_actions=actions,
+        suggested_priority=suggested_priority,
+        related_work_orders=related,
+        requires_human_review=True,
+        disclaimer=HUMAN_APPROVAL_DISCLAIMER,
+    )

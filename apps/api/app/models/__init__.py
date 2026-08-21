@@ -1,6 +1,7 @@
 """集中导入所有模型，便于 Alembic 与 create_all 发现表结构。"""
 
 from app.industrial_gateway.models import (
+    AlarmAnalysisRecord,
     GatewayConnection,
     GatewaySubscription,
     IndustrialAlarm,
@@ -72,6 +73,7 @@ __all__ = [
     "AIStatusEnum",
     "AcceptanceRecord",
     "AgentRun",
+    "AlarmAnalysisRecord",
     "AnomalyEvent",
     "Attachment",
     "DatasetVersion",
