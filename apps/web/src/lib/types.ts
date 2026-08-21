@@ -460,3 +460,40 @@ export interface IndustrialAlarmList {
   total: number;
   read_only_source: boolean;
 }
+
+// ============ Alarm Intelligence（AI-assisted analysis，仅建议） ============
+
+export interface AlarmAnalysis {
+  id: number;
+  alarm_id: number;
+  correlation_group_id: string | null;
+  summary: string;
+  root_cause_hypothesis: string;
+  contributing_factors: string[];
+  evidence: Record<string, unknown>;
+  citations: Array<{ article_id?: number; title?: string; score?: number }>;
+  confidence: number;
+  recommended_actions: string[];
+  suggested_priority: string;
+  related_work_order_id: number | null;
+  requires_human_review: boolean;
+  model_version: string;
+  is_mock: boolean;
+  created_at: string;
+}
+
+export interface AlarmCorrelationGroup {
+  group_id: string;
+  reason: string;
+  alarm_ids: number[];
+  equipment_ids: number[];
+  severity: string;
+  window_start: string | null;
+  window_end: string | null;
+  size: number;
+}
+
+export interface AlarmCorrelateResult {
+  groups: AlarmCorrelationGroup[];
+  total_alarms: number;
+}

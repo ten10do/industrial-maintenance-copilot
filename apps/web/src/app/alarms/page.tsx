@@ -1,11 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { BellRing, ShieldCheck } from 'lucide-react';
+import { BellRing, BrainCircuit, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
-import { acknowledgeAlarm, listAlarms } from '@/lib/api';
-import type { IndustrialAlarm } from '@/lib/types';
+import { acknowledgeAlarm, analyzeAlarm, correlateAlarms, listAlarms } from '@/lib/api';
+import type { AlarmAnalysis, AlarmCorrelateResult, IndustrialAlarm } from '@/lib/types';
 
 const SEVERITY_STYLES: Record<string, string> = {
   CRITICAL: 'bg-red-500/15 text-red-300',
@@ -18,6 +18,9 @@ export default function AlarmsPage() {
   const [total, setTotal] = useState(0);
   const [statusFilter, setStatusFilter] = useState('active');
   const [busy, setBusy] = useState(false);
+  const [analyses, setAnalyses] = useState<Record<number, AlarmAnalysis>>({});
+  const [selectedAlarmId, setSelectedAlarmId] = useState<number | null>(null);
+  const [correlation, setCorrelation] = useState<AlarmCorrelateResult | null>(null);
   const canControl = user?.role === 'admin' || user?.role === 'supervisor';
 
   const refresh = useCallback(async () => {
@@ -40,6 +43,32 @@ export default function AlarmsPage() {
       await acknowledgeAlarm(alarm.id);
       toast.success('报警已确认');
       await refresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runAnalysis = async (alarm: IndustrialAlarm) => {
+    setBusy(true);
+    setSelectedAlarmId(alarm.id);
+    try {
+      const analysis = await analyzeAlarm(alarm.id);
+      setAnalyses((current) => ({ ...current, [alarm.id]: analysis }));
+      toast.success('分析完成（仅供人工决策参考）');
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runCorrelation = async () => {
+    setBusy(true);
+    try {
+      setCorrelation(await correlateAlarms());
+      toast.success('关联分析完成');
     } catch (error: any) {
       toast.error(error.message);
     } finally {
@@ -73,7 +102,12 @@ export default function AlarmsPage() {
       <div className="card overflow-x-auto">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-semibold flex items-center gap-2"><BellRing size={16} className="text-yellow-300" />报警列表</h2>
-          <span className="text-xs text-muted">{total} 条记录</span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted">{total} 条记录</span>
+            <button disabled={busy || !canControl || !alarms.length} onClick={runCorrelation} className="btn btn-outline btn-sm">
+              关联分析
+            </button>
+          </div>
         </div>
         {alarms.length ? (
           <table className="w-full text-sm" data-testid="alarms-table">
@@ -104,12 +138,20 @@ export default function AlarmsPage() {
                     )}
                     {alarm.acknowledged && <span className="ml-2 badge bg-primary-500/15 text-primary-300">已确认</span>}
                   </td>
-                  <td className="py-2 pr-3">
+                  <td className="py-2 pr-3 space-x-2 whitespace-nowrap">
                     {!alarm.acknowledged && (
                       <button disabled={busy || !canControl} onClick={() => ack(alarm)} className="btn btn-outline btn-sm">
                         确认
                       </button>
                     )}
+                    <button
+                      disabled={busy || !canControl}
+                      onClick={() => runAnalysis(alarm)}
+                      className="btn btn-outline btn-sm"
+                      data-testid={`analyze-alarm-${alarm.id}`}
+                    >
+                      AI 分析
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -120,10 +162,78 @@ export default function AlarmsPage() {
         )}
       </div>
 
+      {correlation && correlation.groups.length > 0 && (
+        <div className="card" data-testid="correlation-panel">
+          <h2 className="font-semibold mb-3">关联事件组（{correlation.groups.length} 组 / {correlation.total_alarms} 条报警）</h2>
+          <div className="space-y-2 text-sm">
+            {correlation.groups.map((group) => (
+              <div key={group.group_id} className="rounded-lg border border-card-border p-3 flex items-center justify-between gap-3">
+                <div>
+                  <span className={`badge ${SEVERITY_STYLES[group.severity] || 'bg-gray-500/15 text-gray-300'}`}>{group.severity}</span>
+                  <span className="ml-2 text-xs font-mono text-muted">{group.reason === 'line_cascade' ? '产线级联' : '同设备'}</span>
+                </div>
+                <div className="text-xs text-muted">
+                  报警 {group.alarm_ids.join('、')} · 设备 {group.equipment_ids.map((id) => `#${id}`).join(' ')} · {group.size} 条
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {selectedAlarmId && analyses[selectedAlarmId] && (
+        <div className="card" data-testid="analysis-panel">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold flex items-center gap-2"><BrainCircuit size={16} className="text-primary-400" />报警智能分析（AI-assisted，仅供人工决策参考）</h2>
+            <span className="text-xs text-muted">置信度 {(analyses[selectedAlarmId].confidence * 100).toFixed(0)}% · 建议优先级 {analyses[selectedAlarmId].suggested_priority}</span>
+          </div>
+          <div className="space-y-3 text-sm">
+            <AnalysisBlock title="报警理解" body={analyses[selectedAlarmId].summary} />
+            <AnalysisBlock title="根因假设" body={analyses[selectedAlarmId].root_cause_hypothesis} />
+            {analyses[selectedAlarmId].citations.length > 0 && (
+              <div>
+                <div className="text-xs text-muted mb-1">知识库引用</div>
+                <ul className="list-disc list-inside text-xs text-muted">
+                  {analyses[selectedAlarmId].citations.map((citation, index) => (
+                    <li key={`${citation.article_id}-${index}`}>{citation.title}（得分 {citation.score}）</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <div>
+              <div className="text-xs text-muted mb-1">建议行动（需人工确认后经工单执行）</div>
+              <ol className="list-decimal list-inside space-y-1">
+                {analyses[selectedAlarmId].recommended_actions.map((action, index) => (
+                  <li key={index}>{action}</li>
+                ))}
+              </ol>
+            </div>
+            {correlation && (
+              <p className="text-xs text-muted">
+                关联组：{correlation.groups.find((group) => group.group_id === analyses[selectedAlarmId].correlation_group_id)?.size ?? 1} 条相关报警
+              </p>
+            )}
+            <p className="text-xs text-yellow-300 bg-yellow-500/10 rounded-lg p-3 flex items-start gap-1.5">
+              <ShieldCheck size={14} className="mt-0.5 shrink-0" />
+              本分析不会自动创建或执行任何设备控制；任何操作必须通过工单与 Human Approval 审批流。
+            </p>
+          </div>
+        </div>
+      )}
+
       <p className="text-xs text-muted flex items-start gap-1.5">
         <ShieldCheck size={14} className="mt-0.5 shrink-0 text-green-400" />
-        报警来源于只读 OPC UA 订阅流水线；确认操作仅更新平台内记录，不向设备写入任何内容。
+        报警来源于只读 OPC UA 订阅流水线；确认与分析仅更新平台内记录，不向设备写入任何内容。
       </p>
+    </div>
+  );
+}
+
+function AnalysisBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <div>
+      <div className="text-xs text-muted mb-1">{title}</div>
+      <p className="rounded-lg bg-black/10 border border-card-border p-3">{body}</p>
     </div>
   );
 }

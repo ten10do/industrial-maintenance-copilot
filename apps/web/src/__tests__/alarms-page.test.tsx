@@ -5,10 +5,14 @@ import AlarmsPage from '@/app/alarms/page';
 
 const mockListAlarms = jest.fn();
 const mockAcknowledgeAlarm = jest.fn();
+const mockAnalyzeAlarm = jest.fn();
+const mockCorrelateAlarms = jest.fn();
 
 jest.mock('@/lib/api', () => ({
   listAlarms: (...args: unknown[]) => mockListAlarms(...args),
   acknowledgeAlarm: (...args: unknown[]) => mockAcknowledgeAlarm(...args),
+  analyzeAlarm: (...args: unknown[]) => mockAnalyzeAlarm(...args),
+  correlateAlarms: (...args: unknown[]) => mockCorrelateAlarms(...args),
 }));
 
 jest.mock('@/lib/auth', () => ({
@@ -77,6 +81,66 @@ describe('industrial alarm center page', () => {
     await user.click(screen.getByRole('button', { name: '确认' }));
 
     await waitFor(() => expect(mockAcknowledgeAlarm).toHaveBeenCalledWith(9));
+  });
+
+  it('runs AI analysis and renders understanding, root cause and actions', async () => {
+    mockAnalyzeAlarm.mockResolvedValue({
+      id: 1,
+      alarm_id: 9,
+      correlation_group_id: 'abc123',
+      summary: 'CRITICAL 级工业报警：轴承温度=92.0、振动 RMS=4.9。原始信息：Alarm 已置位',
+      root_cause_hypothesis: '根因假设（bearing_overheat）：轴承温度超过运行阈值。',
+      contributing_factors: ['轴承温度=92.0（阈值 75.0）'],
+      evidence: {},
+      citations: [{ article_id: 3, title: '轴承过热处置手册', score: 0.8 }],
+      confidence: 0.8,
+      recommended_actions: ['降低负载并安排维护窗口', '处理前确认现场安全条件（LOTO）'],
+      suggested_priority: 'P1',
+      related_work_order_id: null,
+      requires_human_review: true,
+      model_version: 'deterministic-rules-v1',
+      is_mock: true,
+      created_at: '2026-08-20T12:00:20Z',
+    });
+    const user = userEvent.setup();
+    render(<AlarmsPage />);
+
+    await screen.findByText('CRITICAL');
+    await user.click(screen.getByTestId('analyze-alarm-9'));
+
+    await waitFor(() => expect(mockAnalyzeAlarm).toHaveBeenCalledWith(9));
+    expect(await screen.findByTestId('analysis-panel')).toBeInTheDocument();
+    expect(screen.getByText(/轴承温度=92\.0/)).toBeInTheDocument();
+    expect(screen.getByText(/bearing_overheat/)).toBeInTheDocument();
+    expect(screen.getByText(/轴承过热处置手册/)).toBeInTheDocument();
+    expect(screen.getByText(/Human Approval/)).toBeInTheDocument();
+  });
+
+  it('runs correlation analysis across active alarms', async () => {
+    mockCorrelateAlarms.mockResolvedValue({
+      groups: [
+        {
+          group_id: 'g1',
+          reason: 'same_equipment',
+          alarm_ids: [9, 8],
+          equipment_ids: [3],
+          severity: 'CRITICAL',
+          window_start: null,
+          window_end: null,
+          size: 2,
+        },
+      ],
+      total_alarms: 2,
+    });
+    const user = userEvent.setup();
+    render(<AlarmsPage />);
+
+    await screen.findByText('CRITICAL');
+    await user.click(screen.getByRole('button', { name: '关联分析' }));
+
+    await waitFor(() => expect(mockCorrelateAlarms).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId('correlation-panel')).toBeInTheDocument();
+    expect(screen.getByText(/关联事件组（1 组/)).toBeInTheDocument();
   });
 
   it('refetches alarms when the status filter changes', async () => {
