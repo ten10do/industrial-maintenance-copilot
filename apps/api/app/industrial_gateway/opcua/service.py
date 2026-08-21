@@ -30,6 +30,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.gateways.equipment import TelemetrySnapshot
+from app.industrial_gateway.alarms import (
+    ALARM_STATE_NORMAL,
+    build_alarm_message,
+    evaluate_alarm_state,
+)
 from app.industrial_gateway.event_buffer import EventBuffer
 from app.industrial_gateway.gateway import GatewayConfig
 from app.industrial_gateway.mapping import (
@@ -44,6 +49,7 @@ from app.industrial_gateway.models import (
     GATEWAY_STATUS_ERROR,
     GatewayConnection,
     GatewaySubscription,
+    IndustrialAlarm,
 )
 from app.industrial_gateway.opcua.client import OpcUaClient
 from app.industrial_gateway.opcua.models import (
@@ -217,6 +223,8 @@ class OpcUaGatewayService:
         }
         self._last_event_at: datetime | None = None
         self._last_event_summary: str | None = None
+        # 工业报警状态机：equipment_id → NORMAL/WARNING/CRITICAL。
+        self._alarm_states: dict[int, str] = {}
 
     # ------------------------------------------------------------------
     # 连接管理
@@ -750,8 +758,55 @@ class OpcUaGatewayService:
             result["work_orders_created"] += int(ingestion.work_order is not None)
             result["telemetry_ids"].append(ingestion.telemetry.id)
             self._event_totals["snapshots_ingested"] += 1
+            self._evaluate_alarm(db, equipment, snapshot)
             self._mark_subscription_events(db, len(events))
         return result
+
+    def _evaluate_alarm(
+        self, db: Session, equipment: Equipment, snapshot: TelemetrySnapshot
+    ) -> None:
+        """工业报警状态机：仅状态跃迁时产生/解除报警记录。"""
+        fields: dict[str, float | bool | None] = {
+            "bearing_temperature": snapshot.bearing_temperature,
+            "vibration_rms": snapshot.vibration_rms,
+            "motor_current": snapshot.motor_current,
+            "load_ratio": snapshot.load_ratio,
+            "motor_voltage": snapshot.motor_voltage,
+        }
+        alarm_node_id = next(
+            (
+                node_id
+                for node_id, mapping in self._mapping_by_node.items()
+                if mapping.metric_name == "alarm"
+            ),
+            None,
+        )
+        alarm_active = False
+        if alarm_node_id is not None:
+            cached = self._latest_values.get(alarm_node_id)
+            alarm_active = bool(cached[0]) if cached is not None else False
+
+        state = evaluate_alarm_state(fields, alarm_active=alarm_active)
+        previous = self._alarm_states.get(equipment.id, ALARM_STATE_NORMAL)
+        if state == previous:
+            return
+        if state == ALARM_STATE_NORMAL:
+            db.query(IndustrialAlarm).filter(
+                IndustrialAlarm.equipment_id == equipment.id,
+                IndustrialAlarm.cleared_at.is_(None),
+            ).update({"cleared_at": datetime.now(UTC)}, synchronize_session=False)
+        else:
+            db.add(
+                IndustrialAlarm(
+                    equipment_id=equipment.id,
+                    severity=state,
+                    message=build_alarm_message(
+                        state, fields, alarm_active=alarm_active
+                    ),
+                    source="opcua-subscription",
+                )
+            )
+        self._alarm_states[equipment.id] = state
 
     def subscription_status(self) -> dict[str, Any]:
         """订阅运行状态（API 层直接消费）。"""

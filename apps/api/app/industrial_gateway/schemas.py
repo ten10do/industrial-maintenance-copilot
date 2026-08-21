@@ -120,3 +120,33 @@ class SubscriptionActionOut(BaseModel):
     already_active: bool = False
     error: str | None = None
     detail: dict[str, Any] = {}
+
+
+# ============ 工业报警（OPC UA Alarm 语义） ============
+
+
+class IndustrialAlarmOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    equipment_id: int
+    severity: str
+    message: str
+    source: str
+    acknowledged: bool
+    acknowledged_at: datetime | None
+    cleared_at: datetime | None
+    created_at: datetime
+
+
+class AlarmListOut(BaseModel):
+    items: list[IndustrialAlarmOut]
+    total: int
+    read_only_source: bool = True
+
+
+class AlarmAckOut(BaseModel):
+    ok: bool
+    id: int
+    acknowledged: bool
+    acknowledged_at: str | None = None

@@ -114,3 +114,33 @@ class GatewaySubscription(TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     event_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class IndustrialAlarm(TimestampMixin, Base):
+    """工业报警（OPC UA Alarm 语义的平台侧记录）。
+
+    生命周期：产生（created_at）→ 人工确认（acknowledged）→ 解除（cleared_at）。
+    仅在报警状态跃迁时产生/解除，不随高频事件重复创建。
+    """
+
+    __tablename__ = "industrial_alarms"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    equipment_id: Mapped[int] = mapped_column(
+        ForeignKey("equipment.id", ondelete="CASCADE"), index=True
+    )
+    severity: Mapped[str] = mapped_column(String(16), index=True)  # WARNING/CRITICAL
+    message: Mapped[str] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(String(64), default="opcua", index=True)
+    acknowledged: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    acknowledged_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    cleared_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+
+    equipment: Mapped[Equipment] = relationship()

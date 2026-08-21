@@ -3,6 +3,7 @@
 from app.industrial_gateway.models import (
     GatewayConnection,
     GatewaySubscription,
+    IndustrialAlarm,
     OpcUaNodeMapping,
 )
 from app.models.base import (
@@ -84,6 +85,7 @@ __all__ = [
     "FaultReportStatusEnum",
     "GatewayConnection",
     "GatewaySubscription",
+    "IndustrialAlarm",
     "KnowledgeArticle",
     "KnowledgeCategoryEnum",
     "KnowledgeChunk",
