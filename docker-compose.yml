@@ -44,6 +44,10 @@ services:
       - STORAGE_LOCAL_DIR=./uploads
       - SEED_ON_STARTUP=${SEED_ON_STARTUP:-true}
       - AUTO_MIGRATE_ON_STARTUP=false
+      # 工业协议网关（OPC UA，只读）。默认关闭；启用方法见 docs/opcua-gateway.md
+      - GATEWAY_ENABLED=${GATEWAY_ENABLED:-false}
+      - GATEWAY_MODE=opcua
+      - GATEWAY_ENDPOINT=opc.tcp://opcua-simulator:4840/industrial-simulator/
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,6 +105,22 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-m", "app.runtime", "scheduler", "--check"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # 软件 OPC UA 设备模拟器（Industrial Motor）。
+  # 仅在 gateway profile 下启动：docker compose --profile gateway up -d
+  opcua-simulator:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command:
+      ["python", "-m", "app.industrial_gateway.simulator.opcua_server", "--host", "0.0.0.0", "--port", "4840"]
+    profiles: ["gateway"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 4840), 3).close()"]
       interval: 10s
       timeout: 5s
       retries: 6
