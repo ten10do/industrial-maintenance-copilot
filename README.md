@@ -22,6 +22,7 @@
 ## What This Project Does
 
 - 采集或模拟设备遥测，监控工业电机与轴承健康状态。
+- 通过 OPC UA 工业协议网关（read-only）接入软件模拟的工业设备层，遥测经数据质量校验后进入同一 AI 链路。
 - 通过确定性规则执行数据质量检查、异常检测、健康评分与风险告警。
 - 使用真实轴承试验台数据研究跨轴承 Fault Classification，并把合格结果接入受控 Staging。
 - 对 XJTU-SY run-to-failure 数据开展 RUL Research，未通过 Promotion Gate 的模型不会进入 Staging。
@@ -61,9 +62,12 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph Data["Data / Industrial Layer"]
+        OpcUaDevice["OPC UA Device Layer（simulated）"]
+        OpcUaGateway["OPC UA Gateway — read-only"]
         Simulator["Equipment Simulator"]
         Gateway["Equipment Gateway"]
         Telemetry["Telemetry"]
+        OpcUaDevice --> OpcUaGateway --> Telemetry
         Simulator --> Gateway --> Telemetry
     end
 
@@ -139,6 +143,7 @@ flowchart TB
 | 领域 | 已实现能力 |
 | --- | --- |
 | 设备与遥测 | 资产档案、传感器、实时监测、固定随机种子的电机/轴承软件仿真 |
+| 工业协议接入 | OPC UA Gateway（只读）、OPC UA 设备模拟器、节点映射配置、Data Quality Layer |
 | 检测与诊断 | 数据质量、九类故障规则、健康分、结构化诊断、证据与置信度 |
 | 智能工单 | 上报、创建、分派、接单、执行、暂停、完工、验收、退回、状态审计 |
 | 资源调度 | 技能/负载匹配、备件预留与缺口、维护窗口建议 |
@@ -146,6 +151,35 @@ flowchart TB
 | 可观测性 | Dataset/Model lineage、PredictionRecord、AgentRun、ToolInvocation、审批轨迹 |
 
 首期聚焦三相工业电机及轴承系统，架构可通过 Gateway、Provider 和设备类型扩展到泵、风机、压缩机、机床、机器人及 PLC 控制系统。
+
+## Industrial Protocol Integration (OPC UA)
+
+平台实现了 **OPC UA-compatible simulated industrial gateway**：数据链路从
+`Simulator → AI Platform` 升级为
+`OPC UA Device Layer → Gateway → Telemetry Pipeline → AI Maintenance Platform`。
+
+- **只读接入**：网关仅读取 OPC UA 节点（NodeId / Value / Timestamp / Quality），
+  代码级禁止写 PLC；未来写操作必须经过 Human Approval 审批流。
+- **Data Quality Layer**：缺失值、坏质量标志、无效时间戳、单位换算与重复
+  时间戳在进入业务前统一处理，不合格数据零落库。
+- **配置化节点映射**：`opcua_node_mappings` 表 + `configs/opcua-node-mapping.yaml`
+  （node_id → equipment + metric + unit + scale/offset），代码不硬编码 NodeId。
+- **AI 能力不旁路**：通过质量校验的数据聚合为 `TelemetrySnapshot` 后调用既有
+  `ingest_snapshot`，Health Score / 异常检测 / 故障预测 / 工单 / 审批全链路复用。
+- **Mock 模式可运行**：无真实 PLC 时，由固定种子的软件 OPC UA Server
+  （Industrial Motor 模拟器）完成完整 Demo。
+
+```mermaid
+flowchart LR
+    Device["OPC UA Device Layer\n(software simulator)"] -->|opc.tcp read-only| Client["OpcUaClient"]
+    Client --> Quality["Data Quality Layer"]
+    Quality --> Mapping["Node Mapping\nequipment + metric + unit"]
+    Mapping --> Snapshot["TelemetrySnapshot (scenario=opcua)"]
+    Snapshot --> Ingest["ingest_snapshot() — 既有 AI 链路"]
+```
+
+详细设计、Demo 命令与真实 PLC 接入路径见 [docs/opcua-gateway.md](docs/opcua-gateway.md)。
+注意：当前为模拟工业网关，**尚未连接任何真实工厂 PLC**。
 
 ## Predictive ML Research
 
@@ -396,7 +430,7 @@ industrial-maintenance-copilot/
 ## Known Limitations
 
 - 数据来自受控 bearing test rigs，不是 factory fleet 或真实生产线。
-- 未连接真实 PLC、SCADA、工业相机、物理传感器或生产网络。
+- 未连接真实 PLC、SCADA、工业相机、物理传感器或生产网络；OPC UA 网关当前为软件模拟形态（OPC UA-compatible simulation），采用轮询而非订阅。
 - Fault Frozen Test 只有 6 个独立轴承，且只有 1 个健康轴承。
 - 信号窗口在同一轴承内相关；window-level metrics 不能等同于独立设备泛化。
 - Development Grouped CV 方差较高，worst-fold macro recall 为 0.4548。
@@ -411,8 +445,9 @@ industrial-maintenance-copilot/
 
 研发阶段已经冻结；以下仅为 Future Work，不代表已排期：
 
-- OPC UA / Modbus Equipment Gateway
-- Field telemetry integration
+- Modbus / PROFINET Equipment Gateway（OPC UA 只读网关已以软件模拟形态落地）
+- Field telemetry integration（真实 PLC / SCADA 接入）
+- OPC UA Subscription 推送模式与证书认证
 - Larger independent fleet validation
 - External RUL benchmark with clear redistribution license
 - 为后续结构变更持续增加可逆 Alembic revision
@@ -421,6 +456,7 @@ industrial-maintenance-copilot/
 
 - [平台业务闭环](docs/intelligent-maintenance-platform.md)
 - [系统架构](docs/architecture.md)
+- [OPC UA 工业协议网关](docs/opcua-gateway.md)
 - [Controlled Agent workflow](docs/agent-workflow.md)
 - [安全边界](docs/security.md)
 - [真实数据与 Predictive ML Pipeline](docs/real-predictive-ml-pipeline.md)
