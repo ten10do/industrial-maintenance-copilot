@@ -32,7 +32,22 @@ async def lifespan(app: FastAPI):
         from app.seed import run_seed_if_empty
 
         run_seed_if_empty()
-    yield
+
+    # 工业协议网关（OPC UA，只读）：默认关闭，开启后随 API 进程轮询。
+    gateway_runtime = None
+    if settings.GATEWAY_ENABLED:
+        from app.industrial_gateway.opcua.service import get_gateway_runtime
+
+        gateway_runtime = get_gateway_runtime()
+        gateway_runtime.start()
+        logger.info("Industrial gateway started (mode=%s)", settings.GATEWAY_MODE)
+    try:
+        yield
+    finally:
+        if gateway_runtime is not None:
+            gateway_runtime.stop()
+            await gateway_runtime.wait_stopped()
+            logger.info("Industrial gateway stopped")
 
 
 app = FastAPI(

@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import random
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Final
@@ -141,7 +142,9 @@ class MotorSimulator:
         """最近一次 advance() 的值快照。"""
         return dict(self._current)
 
-    def value_provider(self):
+    def value_provider(
+        self,
+    ) -> Callable[[str], tuple[float | bool | None, datetime | None]]:
         """返回适配 ``MockOpcUaClient`` 的按节点取值函数。
 
         返回值始终来自同一 tick 快照，保证一次网关同步内各节点一致。

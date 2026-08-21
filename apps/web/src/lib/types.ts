@@ -313,3 +313,96 @@ export interface MLPredictionRecord {
   top_contributing_features?: MLFeatureContribution[];
   created_at: string;
 }
+
+// ============ Industrial Gateway (OPC UA, read-only) ============
+
+export interface GatewayConnectionInfo {
+  id: number;
+  name: string;
+  protocol: string;
+  endpoint: string;
+  mode: string;
+  status: 'disconnected' | 'connected' | 'error';
+  enabled: boolean;
+  poll_interval_seconds: number;
+  last_connected_at: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+}
+
+export interface GatewayRuntimeInfo {
+  mode: string;
+  endpoint: string;
+  connected: boolean;
+  connection_status: string;
+  running: boolean;
+  poll_interval_seconds: number;
+  auto_ingest: boolean;
+  read_only: boolean;
+  last_connected_at: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+  consecutive_failures: number;
+  totals: {
+    reads_total: number;
+    accepted: number;
+    rejected: number;
+    snapshots_ingested: number;
+    snapshots_skipped: number;
+    anomalies: number;
+    work_orders_created: number;
+  };
+  last_sync: Record<string, unknown> | null;
+}
+
+export interface GatewayStatus {
+  connection: GatewayConnectionInfo | null;
+  runtime: GatewayRuntimeInfo;
+  enabled: boolean;
+  read_only: boolean;
+  seed_error: string | null;
+}
+
+export interface GatewayNode {
+  node_id: string;
+  equipment_code: string | null;
+  metric_name: string;
+  unit: string;
+  enabled: boolean;
+  informational: boolean;
+  last_value: number | boolean | string | null;
+  last_quality: 'good' | 'uncertain' | 'bad' | null;
+  last_timestamp: string | null;
+  last_error: string | null;
+}
+
+export interface GatewayNodes {
+  nodes: GatewayNode[];
+  read_only: boolean;
+}
+
+export interface GatewayTestConnect {
+  ok: boolean;
+  endpoint: string;
+  latency_ms: number;
+  probe_node: string | null;
+  sample_value: number | boolean | string | null;
+  error: string | null;
+}
+
+export interface GatewaySyncResult {
+  ok: boolean;
+  error: string | null;
+  reads_total: number;
+  accepted: number;
+  rejected: number;
+  corrections: number;
+  reject_reasons: Record<string, number>;
+  snapshots_ingested: number;
+  snapshots_skipped: number;
+  anomalies: number;
+  work_orders_created: number;
+  telemetry_ids: number[];
+  skipped_details: string[];
+  duration_ms: number;
+}

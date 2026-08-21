@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     equipment,
     fault_reports,
     files,
+    gateway,
     intelligence,
     knowledge,
     ml,
@@ -28,6 +29,7 @@ api_router.include_router(work_orders.router)
 api_router.include_router(copilot.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(intelligence.router)
+api_router.include_router(gateway.router)
 api_router.include_router(ml.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(files.router)

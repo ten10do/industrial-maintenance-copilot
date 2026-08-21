@@ -1,4 +1,4 @@
-import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord } from './types';
+import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult } from './types';
 
 const BASE = '/api/v1';
 
@@ -296,4 +296,21 @@ export async function verifyMaintenance(data: {
   return request<any>('/intelligence/verifications', {
     method: 'POST', body: JSON.stringify(data),
   });
+}
+
+// Industrial Gateway (OPC UA, read-only)
+export async function getGatewayStatus() {
+  return request<GatewayStatus>('/gateway/status');
+}
+export async function getGatewayNodes() {
+  return request<GatewayNodes>('/gateway/nodes');
+}
+export async function testGatewayConnection() {
+  return request<GatewayTestConnect>('/gateway/test-connect', { method: 'POST' });
+}
+export async function syncGateway() {
+  return request<GatewaySyncResult>('/gateway/sync', { method: 'POST' });
+}
+export async function reloadGatewayMappings() {
+  return request<{ created: number; updated: number; skipped: string[] }>('/gateway/mappings/reload', { method: 'POST' });
 }

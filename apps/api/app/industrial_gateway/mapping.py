@@ -74,6 +74,17 @@ class MappingSeedResult:
     skipped: list[str] = field(default_factory=list)
 
 
+def load_all_mappings(db: Session) -> list[NodeMapping]:
+    """加载全部映射行（含禁用行），供节点列表展示。"""
+    rows = (
+        db.query(OpcUaNodeMapping, Equipment.code)
+        .join(Equipment, Equipment.id == OpcUaNodeMapping.equipment_id)
+        .order_by(OpcUaNodeMapping.node_id)
+        .all()
+    )
+    return [_to_node_mapping(mapping, code) for mapping, code in rows]
+
+
 def load_mappings(db: Session) -> list[NodeMapping]:
     """从数据库加载全部启用的节点映射（含设备信息）。"""
     rows = (
@@ -83,20 +94,21 @@ def load_mappings(db: Session) -> list[NodeMapping]:
         .order_by(OpcUaNodeMapping.node_id)
         .all()
     )
-    return [
-        NodeMapping(
-            node_id=mapping.node_id,
-            equipment_id=mapping.equipment_id,
-            equipment_code=code,
-            metric_name=mapping.metric_name,
-            unit=mapping.unit,
-            scale=mapping.scale,
-            offset=mapping.offset,
-            enabled=mapping.enabled,
-            informational=mapping.informational,
-        )
-        for mapping, code in rows
-    ]
+    return [_to_node_mapping(mapping, code) for mapping, code in rows]
+
+
+def _to_node_mapping(mapping: OpcUaNodeMapping, equipment_code: str) -> NodeMapping:
+    return NodeMapping(
+        node_id=mapping.node_id,
+        equipment_id=mapping.equipment_id,
+        equipment_code=equipment_code,
+        metric_name=mapping.metric_name,
+        unit=mapping.unit,
+        scale=mapping.scale,
+        offset=mapping.offset,
+        enabled=mapping.enabled,
+        informational=mapping.informational,
+    )
 
 
 def seed_mappings_from_config(

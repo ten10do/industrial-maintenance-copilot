@@ -45,6 +45,9 @@ class OpcUaClient(Protocol):
 
     endpoint: str
 
+    @property
+    def connected(self) -> bool: ...
+
     async def connect(self) -> None: ...
 
     async def disconnect(self) -> None: ...
