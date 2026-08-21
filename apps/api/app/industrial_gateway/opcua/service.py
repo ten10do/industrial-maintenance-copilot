@@ -57,6 +57,7 @@ from app.industrial_gateway.opcua.subscription import (
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_ERROR,
     SUBSCRIPTION_STATUS_STOPPED,
+    MockSubscriptionClient,
     NodeDataChange,
     OpcUaSubscriptionClient,
     SubscriptionHandle,
@@ -146,6 +147,8 @@ class OpcUaGatewayService:
         subscription_client_factory: Any = None,
         subscription_sampling_ms: float = 1000.0,
         subscription_debounce_ms: float = 1000.0,
+        event_source: Any = None,
+        session_factory: Any = None,
     ) -> None:
         self._client = client
         self._mode = mode
@@ -158,6 +161,10 @@ class OpcUaGatewayService:
         # 订阅（事件驱动）：默认客户端工厂由运行时装配提供。
         self._subscription_client_factory = subscription_client_factory
         self._subscription_sampling_ms = subscription_sampling_ms
+        # Mock 模式事件源：返回自上次调用以来变化的 DataChange 事件。
+        self._event_source = event_source
+        # 后台 flush 循环使用的会话工厂（测试可注入）。
+        self._session_factory = session_factory or SessionLocal
 
         self._quality = DataQualityLayer()
         self._lock = asyncio.Lock()
@@ -198,6 +205,7 @@ class OpcUaGatewayService:
         ] = {}
         self._mapping_by_node: dict[str, NodeMapping] = {}
         self._flush_task: asyncio.Task[None] | None = None
+        self._publish_task: asyncio.Task[None] | None = None
         self._event_totals = {
             "received": 0,
             "accepted": 0,
@@ -571,6 +579,7 @@ class OpcUaGatewayService:
             # 初始值灌注：保证最新值缓存完整后再开始事件驱动快照。
             await self._prime_latest_values(sub_client, node_ids)
             self._start_flush_loop()
+            self._start_publish_loop()
             logger.info(
                 "OPC UA DataChange 订阅已启动：%d 个节点（sampling=%sms）",
                 len(handle.node_ids),
@@ -590,6 +599,7 @@ class OpcUaGatewayService:
             if self._subscription_status != SUBSCRIPTION_STATUS_ACTIVE:
                 return {"ok": True, "status": self._subscription_status}
             await self.flush_now(db)
+            await self._stop_publish_loop()
             await self._stop_flush_loop()
             handle = self._subscription_handle
             client = self._subscription_client
@@ -625,6 +635,35 @@ class OpcUaGatewayService:
         if self._flush_task is None or self._flush_task.done():
             self._flush_task = asyncio.create_task(self._flush_loop())
 
+    def _start_publish_loop(self) -> None:
+        """Mock 模式：把确定性仿真的节点变更作为 DataChange 事件发布。"""
+        if self._mode != "mock" or self._event_source is None:
+            return
+        if not isinstance(self._subscription_client, MockSubscriptionClient):
+            return
+        if self._publish_task is None or self._publish_task.done():
+            self._publish_task = asyncio.create_task(self._mock_publish_loop())
+
+    async def _stop_publish_loop(self) -> None:
+        task = self._publish_task
+        if task is not None:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+            self._publish_task = None
+
+    async def _mock_publish_loop(self) -> None:
+        interval = max(self._subscription_sampling_ms / 1000.0, 0.05)
+        client = self._subscription_client
+        while self._subscription_status == SUBSCRIPTION_STATUS_ACTIVE and isinstance(
+            client, MockSubscriptionClient
+        ):
+            await asyncio.sleep(interval)
+            source = self._event_source
+            events = source() if source is not None else []
+            for event in events:
+                client.publish(event)
+
     async def _stop_flush_loop(self) -> None:
         task = self._flush_task
         if task is not None:
@@ -637,7 +676,7 @@ class OpcUaGatewayService:
         interval = max(self._buffer.debounce_seconds / 2.0, 0.05)
         while self._subscription_status == SUBSCRIPTION_STATUS_ACTIVE:
             await asyncio.sleep(interval)
-            db = SessionLocal()
+            db = self._session_factory()
             try:
                 await self.flush_due(db)
             except Exception:  # pragma: no cover - flush 内部已兜底
@@ -991,16 +1030,37 @@ def get_gateway_runtime() -> OpcUaGatewayService:
         build_subscription_client,
     )
     from app.industrial_gateway.opcua.client import MockOpcUaClient
-    from app.industrial_gateway.simulator.generator import MotorSimulator
+    from app.industrial_gateway.simulator.generator import NODE_NAMES, MotorSimulator
 
     config: GatewayConfig = GatewayConfig.from_settings(settings)
     client = build_client(config)
     before_sync = None
+    event_source = None
     if isinstance(client, MockOpcUaClient):
         # Mock 模式：接入确定性电机仿真，作为进程内“设备数据源”。
         simulator = MotorSimulator(seed=42, scenario="normal")
         client.set_value_provider(simulator.value_provider())
         before_sync = simulator.advance
+
+        # DataChange 事件源：每次调用推进一个 tick，返回发生变化的节点事件。
+        node_id_by_name = {
+            name: f"ns=2;s={simulator.prefix}.{name}" for name in NODE_NAMES
+        }
+
+        def event_source() -> list[NodeDataChange]:
+            values = simulator.advance()
+            timestamp = datetime.now(UTC)
+            return [
+                NodeDataChange(
+                    node_id=node_id_by_name[name],
+                    value=values[name],
+                    source_timestamp=timestamp,
+                    status_code=0,
+                    quality="good",
+                )
+                for name in simulator.changed_nodes
+                if name in node_id_by_name
+            ]
 
     _gateway_runtime = OpcUaGatewayService(
         client,
@@ -1012,6 +1072,7 @@ def get_gateway_runtime() -> OpcUaGatewayService:
         subscription_client_factory=lambda: build_subscription_client(config),
         subscription_sampling_ms=config.subscription_sampling_ms,
         subscription_debounce_ms=config.subscription_debounce_ms,
+        event_source=event_source,
     )
     return _gateway_runtime
 

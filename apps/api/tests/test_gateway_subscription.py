@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from sqlalchemy.orm import Session
 
 from app.industrial_gateway.models import (
     GATEWAY_STATUS_CONNECTED,
@@ -75,6 +76,9 @@ def _make_service(
     tmp_path: Path,
     *,
     scenario: str = "normal",
+    with_event_source: bool = False,
+    sampling_ms: float = 1000.0,
+    debounce_ms: float = 1000.0,
 ) -> tuple[OpcUaGatewayService, MotorSimulator, MockSubscriptionClient]:
     """构建带映射配置的网关服务 + Mock 订阅客户端。"""
     equipment = Equipment(
@@ -127,6 +131,28 @@ def _make_service(
         )
 
     subscription_client = MockSubscriptionClient(initial_provider=initial_provider)
+
+    event_source = None
+    if with_event_source:
+        node_id_by_name = {
+            name: f"ns=2;s=Motor001.{name}" for name, _metric in FULL_NODES
+        }
+
+        def event_source() -> list[NodeDataChange]:
+            values = simulator.advance()
+            timestamp = datetime.now(UTC)
+            return [
+                NodeDataChange(
+                    node_id=node_id_by_name[name],
+                    value=values[name],
+                    source_timestamp=timestamp,
+                    status_code=0,
+                    quality="good",
+                )
+                for name in simulator.changed_nodes
+                if name in node_id_by_name
+            ]
+
     service = OpcUaGatewayService(
         MockOpcUaClient(value_provider=simulator.value_provider()),
         mode="mock",
@@ -134,8 +160,11 @@ def _make_service(
         mapping_config_path=str(config_path),
         before_sync=simulator.advance,
         subscription_client_factory=lambda: subscription_client,
-        subscription_sampling_ms=1000.0,
-        subscription_debounce_ms=1000.0,
+        subscription_sampling_ms=sampling_ms,
+        subscription_debounce_ms=debounce_ms,
+        event_source=event_source,
+        # 后台 flush 循环绑定测试使用的同一内存数据库。
+        session_factory=lambda: Session(bind=db.get_bind(), autoflush=False),
     )
     return service, simulator, subscription_client
 
@@ -348,3 +377,27 @@ async def test_subscription_read_only_guard(db, tmp_path):
     await sub_client.connect()
     with pytest.raises(PermissionError, match="read-only"):
         await sub_client.write_node("ns=2;s=Motor001.Temperature", 999)
+
+
+@pytest.mark.asyncio
+async def test_mock_publish_loop_drives_end_to_end_ingestion(db, tmp_path):
+    """Mock 事件源 → 发布循环 → 缓冲 → flush 循环 → 遥测入库（全自动）。"""
+    import asyncio
+
+    service, _simulator, sub_client = _make_service(
+        db, tmp_path, with_event_source=True, sampling_ms=100.0, debounce_ms=100.0
+    )
+    result = await service.start_subscription(db, client=sub_client)
+    assert result["ok"] is True
+
+    await asyncio.sleep(1.5)
+
+    assert service._event_totals["received"] > 0
+    assert service._event_totals["accepted"] > 0
+    # flush 循环自动把缓冲事件聚合入库，无需手动 flush。
+    assert db.query(TelemetryRecord).count() >= 1
+    status = service.subscription_status()
+    assert status["subscription_status"] == SUBSCRIPTION_STATUS_ACTIVE
+    assert status["event_totals"]["snapshots_ingested"] >= 1
+    await service.stop_subscription(db)
+    assert service.subscription_status()["subscription_status"] == "stopped"
