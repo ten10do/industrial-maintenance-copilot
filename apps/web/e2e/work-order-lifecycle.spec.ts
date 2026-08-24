@@ -133,7 +133,10 @@ async function completeAllChecklistItems(page: any) {
     );
     const isChecked = await checkbox.isChecked();
 
-    if (!isChecked && !(await checkbox.isDisabled())) {
+    if (!isChecked) {
+      // 同 completeSafetyChecklistItems：等待异步状态刷新使复选框可用，
+      // 而不是在禁用态下静默跳过（会把失败推迟到提交校验步骤）。
+      await expect(checkbox).toBeEnabled({ timeout: 15000 });
       const updateResponse = page.waitForResponse(
         (response: any) =>
           response.request().method() === 'PUT'
@@ -141,7 +144,11 @@ async function completeAllChecklistItems(page: any) {
       );
       await checkbox.check({ force: true });
       expect((await updateResponse).ok()).toBeTruthy();
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      // 等待 SafetyChecklist 全局 loadingId 清空（animate-pulse 标记消失），
+      // 确保下一次勾选不被组件的单飞守卫静默忽略。
+      await expect(
+        page.locator('[data-testid="safety-checklist"] span.animate-pulse')
+      ).toHaveCount(0, { timeout: 15000 });
       await expect(checkbox).toBeChecked({ timeout: 5000 });
     }
   }
@@ -156,12 +163,24 @@ async function completeSafetyChecklistItems(page: any) {
   for (let index = 0; index < count; index += 1) {
     const checkbox = checkboxes.nth(index);
     if (!(await checkbox.isChecked())) {
+      // 接受工单后的状态刷新（accept POST → refetch → 重渲染）是异步的：
+      // 在 wo.status 变为 accepted 前清单复选框处于禁用态。
+      // 显式等待可用状态，避免依赖 networkidle 的时序运气
+      // （全量 suite 下前序用例拖慢响应时该竞态会必现）。
+      await expect(checkbox).toBeEnabled({ timeout: 15000 });
       const updateResponse = page.waitForResponse(
         (response: any) => response.request().method() === 'PUT' && response.url().includes('/checklist/'),
       );
       await checkbox.check({ force: true });
       expect((await updateResponse).ok()).toBeTruthy();
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      // SafetyChecklist 以全局 loadingId 单飞串行处理勾选：上一个勾选的
+      // PUT→refetch 未落地前，下一次 onChange 会被组件静默忽略。
+      // 加载中的项会渲染 span.animate-pulse 标记；等待其清零即组件回到空闲，
+      // 下一次勾选必然被受理（确定性信号，替代对响应速度的侥幸依赖）。
+      await expect(
+        page.locator('[data-testid="checklist-group-safety"] span.animate-pulse')
+      ).toHaveCount(0, { timeout: 15000 });
+      await expect(checkbox).toBeChecked({ timeout: 5000 });
     }
   }
 }

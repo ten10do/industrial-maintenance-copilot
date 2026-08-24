@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
@@ -43,8 +43,18 @@ export default function WorkOrderDetail() {
   // 上传中
   const [uploading, setUploading] = useState(false);
 
+  // 请求序号守卫：本页存在多个并发刷新入口（接受/开始、清单勾选、记录添加等），
+  // 慢环境下较早发出的 GET 可能较晚返回；若无守卫，过期响应会把
+  // 已落库的最新状态（如已勾选的安全项）回滚覆盖成旧值。
+  const fetchSeqRef = useRef(0);
   const fetch = useCallback(async () => {
-    try { const d = await getWorkOrder(Number(id)); setWo(d); } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
+    const seq = ++fetchSeqRef.current;
+    try {
+      const d = await getWorkOrder(Number(id));
+      if (seq === fetchSeqRef.current) setWo(d);
+    } catch (e: any) { toast.error(e.message); } finally {
+      if (seq === fetchSeqRef.current) setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { fetch(); }, [fetch]);
