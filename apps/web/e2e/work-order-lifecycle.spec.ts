@@ -133,7 +133,10 @@ async function completeAllChecklistItems(page: any) {
     );
     const isChecked = await checkbox.isChecked();
 
-    if (!isChecked && !(await checkbox.isDisabled())) {
+    if (!isChecked) {
+      // 同 completeSafetyChecklistItems：等待异步状态刷新使复选框可用，
+      // 而不是在禁用态下静默跳过（会把失败推迟到提交校验步骤）。
+      await expect(checkbox).toBeEnabled({ timeout: 15000 });
       const updateResponse = page.waitForResponse(
         (response: any) =>
           response.request().method() === 'PUT'
@@ -156,6 +159,11 @@ async function completeSafetyChecklistItems(page: any) {
   for (let index = 0; index < count; index += 1) {
     const checkbox = checkboxes.nth(index);
     if (!(await checkbox.isChecked())) {
+      // 接受工单后的状态刷新（accept POST → refetch → 重渲染）是异步的：
+      // 在 wo.status 变为 accepted 前清单复选框处于禁用态。
+      // 显式等待可用状态，避免依赖 networkidle 的时序运气
+      // （全量 suite 下前序用例拖慢响应时该竞态会必现）。
+      await expect(checkbox).toBeEnabled({ timeout: 15000 });
       const updateResponse = page.waitForResponse(
         (response: any) => response.request().method() === 'PUT' && response.url().includes('/checklist/'),
       );
