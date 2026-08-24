@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
+    alarms,
     auth,
     copilot,
     dashboard,
@@ -30,6 +31,7 @@ api_router.include_router(copilot.router)
 api_router.include_router(knowledge.router)
 api_router.include_router(intelligence.router)
 api_router.include_router(gateway.router)
+api_router.include_router(alarms.router)
 api_router.include_router(ml.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(files.router)

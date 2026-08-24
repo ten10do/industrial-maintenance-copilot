@@ -1,19 +1,23 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Cable, PlugZap, RefreshCcw, RadioTower, ShieldCheck } from 'lucide-react';
+import { Cable, PlugZap, RefreshCcw, RadioTower, ShieldCheck, Rss } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
 import {
   getGatewayNodes,
   getGatewayStatus,
+  getGatewaySubscriptions,
   reloadGatewayMappings,
+  startGatewaySubscriptions,
+  stopGatewaySubscriptions,
   syncGateway,
   testGatewayConnection,
 } from '@/lib/api';
 import type {
   GatewayNode,
   GatewayStatus,
+  GatewaySubscriptionStatus,
   GatewaySyncResult,
   GatewayTestConnect,
 } from '@/lib/types';
@@ -30,16 +34,19 @@ export default function GatewayPage() {
   const [nodes, setNodes] = useState<GatewayNode[]>([]);
   const [lastTest, setLastTest] = useState<GatewayTestConnect | null>(null);
   const [lastSync, setLastSync] = useState<GatewaySyncResult | null>(null);
+  const [subscription, setSubscription] = useState<GatewaySubscriptionStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const canControl = user?.role === 'admin' || user?.role === 'supervisor';
 
   const refresh = useCallback(async () => {
-    const [statusData, nodesData] = await Promise.all([
+    const [statusData, nodesData, subscriptionData] = await Promise.all([
       getGatewayStatus().catch(() => null),
       getGatewayNodes().catch(() => null),
+      getGatewaySubscriptions().catch(() => null),
     ]);
     if (statusData) setStatus(statusData);
     if (nodesData) setNodes(nodesData.nodes);
+    if (subscriptionData) setSubscription(subscriptionData);
   }, []);
 
   useEffect(() => {
@@ -89,6 +96,25 @@ export default function GatewayPage() {
   const runtime = status?.runtime;
   const connection = status?.connection;
   const connected = runtime?.connected ?? false;
+  const subscriptionActive = subscription?.subscription_status === 'active';
+
+  const runSubscriptionToggle = async () => {
+    setBusy(true);
+    try {
+      if (subscriptionActive) {
+        await stopGatewaySubscriptions();
+        toast.success('订阅已停止');
+      } else {
+        await startGatewaySubscriptions();
+        toast.success('订阅已启动');
+      }
+      await refresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div className="max-w-7xl mx-auto space-y-6" data-testid="gateway-page">
@@ -135,6 +161,34 @@ export default function GatewayPage() {
         </section>
 
         <section className="xl:col-span-3 space-y-4">
+          <div className="card" data-testid="subscription-status">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Rss size={16} className="text-primary-400" />
+                <h2 className="font-semibold">Subscription Status</h2>
+                <span className="text-[10px] text-muted">DataChange · read-only</span>
+              </div>
+              <span className={`badge ${subscriptionActive ? 'bg-green-500/15 text-green-300' : subscription?.subscription_status === 'error' ? 'bg-red-500/15 text-red-300' : 'bg-gray-500/15 text-gray-300'}`}>
+                {subscriptionActive ? '订阅中' : subscription?.subscription_status === 'error' ? '异常' : '已停止'}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+              <SyncStat label="活动节点" value={subscription?.active_nodes.length ?? 0} />
+              <SyncStat label="采样间隔" value={`${subscription?.sampling_interval_ms ?? '--'} ms`} />
+              <SyncStat label="事件总数" value={subscription?.event_totals.received ?? 0} />
+              <SyncStat label="入库快照" value={subscription?.event_totals.snapshots_ingested ?? 0} />
+            </div>
+            <p className="text-xs text-muted mt-3">
+              最近事件：{subscription?.last_event ? `${formatTime(subscription.last_event_at)} · ${subscription.last_event}` : '--'}
+              {subscription ? ` · 缓冲待发 ${subscription.buffer_pending}` : ''}
+            </p>
+            {subscription?.error && <p className="text-xs text-red-300 mt-1 break-all">{subscription.error}</p>}
+            <button disabled={busy || !canControl} onClick={runSubscriptionToggle} className="btn btn-outline btn-sm mt-3">
+              {subscriptionActive ? '停止订阅' : '启动订阅'}
+            </button>
+            {!canControl && <p className="text-xs text-yellow-300 mt-2">订阅控制仅限主管和管理员；当前为只读查看。</p>}
+          </div>
+
           {lastTest && (
             <div className={`card border ${lastTest.ok ? 'border-green-500/30' : 'border-red-500/30'}`}>
               <div className="flex items-center justify-between mb-2">

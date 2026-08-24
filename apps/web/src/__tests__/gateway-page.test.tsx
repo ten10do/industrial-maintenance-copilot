@@ -8,6 +8,9 @@ const mockGetGatewayNodes = jest.fn();
 const mockTestGatewayConnection = jest.fn();
 const mockSyncGateway = jest.fn();
 const mockReloadGatewayMappings = jest.fn();
+const mockGetGatewaySubscriptions = jest.fn();
+const mockStartGatewaySubscriptions = jest.fn();
+const mockStopGatewaySubscriptions = jest.fn();
 
 jest.mock('@/lib/api', () => ({
   getGatewayStatus: (...args: unknown[]) => mockGetGatewayStatus(...args),
@@ -15,6 +18,9 @@ jest.mock('@/lib/api', () => ({
   testGatewayConnection: (...args: unknown[]) => mockTestGatewayConnection(...args),
   syncGateway: (...args: unknown[]) => mockSyncGateway(...args),
   reloadGatewayMappings: (...args: unknown[]) => mockReloadGatewayMappings(...args),
+  getGatewaySubscriptions: (...args: unknown[]) => mockGetGatewaySubscriptions(...args),
+  startGatewaySubscriptions: (...args: unknown[]) => mockStartGatewaySubscriptions(...args),
+  stopGatewaySubscriptions: (...args: unknown[]) => mockStopGatewaySubscriptions(...args),
 }));
 
 jest.mock('@/lib/auth', () => ({
@@ -97,11 +103,30 @@ const nodesPayload = {
   read_only: true,
 };
 
+const subscriptionPayload = {
+  ok: true,
+  status: 'active',
+  subscription_status: 'active',
+  sampling_interval_ms: 1000,
+  active_nodes: ['ns=2;s=Motor001.Temperature', 'ns=2;s=Motor001.Vibration'],
+  buffer_pending: 0,
+  event_totals: {
+    received: 48, accepted: 46, duplicates_suppressed: 2,
+    rejected: 0, unknown_node: 0, snapshots_ingested: 6, snapshots_skipped: 0,
+  },
+  last_event_at: '2026-08-20T12:00:10Z',
+  last_event: 'ns=2;s=Motor001.Temperature = 86.5',
+  error: null,
+  read_only: true,
+  rows: [],
+};
+
 describe('industrial gateway page', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockGetGatewayStatus.mockResolvedValue(statusPayload);
     mockGetGatewayNodes.mockResolvedValue(nodesPayload);
+    mockGetGatewaySubscriptions.mockResolvedValue(subscriptionPayload);
     mockTestGatewayConnection.mockResolvedValue({
       ok: true,
       endpoint: 'mock://opcua-simulator',
@@ -125,12 +150,13 @@ describe('industrial gateway page', () => {
 
     expect(await screen.findByText('工业协议网关（OPC UA）')).toBeInTheDocument();
     expect(await screen.findByText('mock://opcua-simulator')).toBeInTheDocument();
-    expect(await screen.findByText(/ns=2;s=Motor001.Temperature/)).toBeInTheDocument();
+    const temperatureCells = await screen.findAllByText(/ns=2;s=Motor001.Temperature/);
+    expect(temperatureCells.length).toBeGreaterThan(0);
     expect(screen.getByText('86.5')).toBeInTheDocument();
     // 坏质量节点展示质量异常标记。
     expect(screen.getByTitle('bad_quality: status_code=2158848000')).toBeInTheDocument();
-    // read-only 提示。
-    expect(screen.getByText(/read-only/i)).toBeInTheDocument();
+    // read-only 提示（连接卡片与订阅卡片均包含）。
+    expect(screen.getAllByText(/read-only/i).length).toBeGreaterThan(0);
   });
 
   it('tests the connection via the read-only probe', async () => {
@@ -154,6 +180,28 @@ describe('industrial gateway page', () => {
 
     await waitFor(() => expect(mockSyncGateway).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('最近一次同步（读取 → 质量校验 → 遥测入库）')).toBeInTheDocument();
-    expect(screen.getByText('入库快照')).toBeInTheDocument();
+    expect(screen.getAllByText('入库快照').length).toBeGreaterThan(0);
+  });
+
+  it('renders subscription status with active nodes and event counters', async () => {
+    render(<GatewayPage />);
+
+    expect(await screen.findByTestId('subscription-status')).toBeInTheDocument();
+    expect(await screen.findByText('订阅中')).toBeInTheDocument();
+    expect(screen.getByText('1000 ms')).toBeInTheDocument();
+    expect(await screen.findByText(/Temperature = 86\.5/)).toBeInTheDocument();
+    expect(screen.getAllByText('48').length).toBeGreaterThan(0);
+  });
+
+  it('stops an active subscription from the gateway page', async () => {
+    mockStopGatewaySubscriptions.mockResolvedValue({ ok: true, status: 'stopped' });
+    const user = userEvent.setup();
+    render(<GatewayPage />);
+
+    await screen.findByText('工业协议网关（OPC UA）');
+    await screen.findByText('订阅中');
+    await user.click(screen.getByRole('button', { name: '停止订阅' }));
+
+    await waitFor(() => expect(mockStopGatewaySubscriptions).toHaveBeenCalledTimes(1));
   });
 });

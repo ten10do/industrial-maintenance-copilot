@@ -4,6 +4,7 @@ import path from 'node:path';
 const EXPECTED_ROUTES = [
   '/',
   '/admin',
+  '/alarms',
   '/approvals',
   '/copilot',
   '/dashboard',
@@ -43,6 +44,6 @@ describe('application route regression', () => {
       .sort();
 
     expect(routes).toEqual([...EXPECTED_ROUTES].sort());
-    expect(routes).toHaveLength(20);
+    expect(routes).toHaveLength(21);
   });
 });

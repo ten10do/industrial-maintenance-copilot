@@ -77,7 +77,12 @@ def _clamp(name: str, value: float) -> float:
 
 @dataclass(slots=True)
 class MotorSimulator:
-    """Industrial Motor 确定性仿真器。"""
+    """Industrial Motor 确定性仿真器。
+
+    ``advance()`` 同时记录与上一 tick 的差异（``changed_nodes``），
+    作为 DataChange 订阅的事件源：同一个 ``(seed, scenario, tick)``
+    永远产生同样的值与同样的事件序列。
+    """
 
     seed: int = 42
     scenario: str = SCENARIO_NORMAL
@@ -85,6 +90,8 @@ class MotorSimulator:
     _tick: int = field(default=0, init=False)
     _current: dict[str, float | bool] = field(default_factory=dict, init=False)
     _current_at: datetime | None = field(default=None, init=False)
+    _previous: dict[str, float | bool] = field(default_factory=dict, init=False)
+    _changes: dict[str, bool] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         if self.scenario not in SUPPORTED_SCENARIOS:
@@ -96,6 +103,11 @@ class MotorSimulator:
     @property
     def tick(self) -> int:
         return self._tick
+
+    @property
+    def changed_nodes(self) -> tuple[str, ...]:
+        """最近一次 advance 中发生变化的节点名（DataChange 事件源）。"""
+        return tuple(name for name, changed in self._changes.items() if changed)
 
     def node_ids(self, namespace: int = 2) -> list[str]:
         """该设备暴露的全部字符串 NodeId（默认 ns=2）。"""
@@ -123,6 +135,9 @@ class MotorSimulator:
             values["Vibration"] += min(elapsed * 0.12, 1.6)
             values["LoadRatio"] += min(elapsed * 0.4, 6.0)
         elif self.scenario == SCENARIO_FAULT and elapsed > 0:
+            # 故障起始 tick：振动突然飙升（DataChange 立即可见）。
+            if elapsed == 1:
+                values["Vibration"] += 2.2
             # 强劣化：温升 + 振动 + 过流，置位报警。
             values["Temperature"] += min(elapsed * 3.2, 44.0)
             values["Vibration"] += min(elapsed * 0.55, 3.1)
@@ -133,6 +148,12 @@ class MotorSimulator:
         for name in METRIC_RANGES:
             values[name] = round(_clamp(name, float(values[name])), 2)
 
+        # 变更检测：与上一 tick 比较，供订阅事件源使用。
+        self._changes = {
+            name: name not in self._previous or self._previous[name] != value
+            for name, value in values.items()
+        }
+        self._previous = dict(values)
         self._tick += 1
         self._current = values
         self._current_at = datetime.now(UTC)

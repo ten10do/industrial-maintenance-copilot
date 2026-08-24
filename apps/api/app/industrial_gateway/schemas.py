@@ -82,3 +82,71 @@ class GatewayStatusOut(BaseModel):
     enabled: bool
     read_only: bool = True
     seed_error: str | None = None
+
+
+# ============ OPC UA DataChange 订阅（事件驱动，只读） ============
+
+
+class GatewaySubscriptionRowOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    gateway_id: int
+    node_id: str
+    sampling_interval: float
+    status: str
+    last_event_at: datetime | None
+    event_count: int
+
+
+class SubscriptionStatusOut(BaseModel):
+    ok: bool = True
+    status: str
+    subscription_status: str
+    sampling_interval_ms: float
+    active_nodes: list[str] = []
+    buffer_pending: int = 0
+    event_totals: dict[str, int] = {}
+    last_event_at: str | None = None
+    last_event: str | None = None
+    error: str | None = None
+    read_only: bool = True
+    rows: list[GatewaySubscriptionRowOut] = []
+
+
+class SubscriptionActionOut(BaseModel):
+    ok: bool
+    status: str
+    already_active: bool = False
+    error: str | None = None
+    detail: dict[str, Any] = {}
+
+
+# ============ 工业报警（OPC UA Alarm 语义） ============
+
+
+class IndustrialAlarmOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    equipment_id: int
+    severity: str
+    message: str
+    source: str
+    acknowledged: bool
+    acknowledged_at: datetime | None
+    cleared_at: datetime | None
+    created_at: datetime
+
+
+class AlarmListOut(BaseModel):
+    items: list[IndustrialAlarmOut]
+    total: int
+    read_only_source: bool = True
+
+
+class AlarmAckOut(BaseModel):
+    ok: bool
+    id: int
+    acknowledged: bool
+    acknowledged_at: str | None = None

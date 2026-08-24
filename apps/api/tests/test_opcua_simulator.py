@@ -114,6 +114,44 @@ def test_server_cli_defaults_and_validation():
         OpcUaSimulatorServer(scenario="storm")
 
 
+# ---------------------------------------------------------------------------
+# DataChange 事件源（订阅升级）
+# ---------------------------------------------------------------------------
+
+
+def test_changed_nodes_tracks_discrete_transitions():
+    sim = MotorSimulator(seed=9, scenario="normal")
+    # 构造时的首次 advance：无前值，全部节点视为“已变化”（初始发布语义）。
+    assert len(sim.changed_nodes) == 8
+    sim.advance()
+    # normal 工况：模拟量持续抖动 → 持续变化；离散量保持不变。
+    changed = set(sim.changed_nodes)
+    assert {"Temperature", "Vibration", "Current"} <= changed
+    assert "RunningState" not in changed
+    assert "Alarm" not in changed
+
+
+def test_fault_onset_produces_vibration_spike_and_alarm_change():
+    sim = MotorSimulator(seed=9, scenario="fault")
+    baseline = [sim.advance()["Vibration"] for _ in range(3)]  # 预热期（tick 0-2）
+    values = sim.advance()  # elapsed == 1：故障起始 tick
+    assert values["Alarm"] is True
+    assert "Alarm" in sim.changed_nodes
+    # 突发飙升：起始 tick 的振动明显高于预热期基线。
+    pre_max = max(baseline)
+    assert values["Vibration"] >= min(pre_max + 2.0, 5.0)
+
+
+def test_fault_event_sequence_is_reproducible():
+    a = MotorSimulator(seed=77, scenario="fault")
+    b = MotorSimulator(seed=77, scenario="fault")
+    for _ in range(12):
+        a.advance()
+        b.advance()
+        assert a.changed_nodes == b.changed_nodes
+        assert a.current_values() == b.current_values()
+
+
 @pytest.mark.asyncio
 async def test_simulator_server_publishes_ticks_without_network():
     """不绑定端口，仅验证发布循环的变量写入逻辑。"""

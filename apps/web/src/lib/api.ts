@@ -1,4 +1,4 @@
-import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult } from './types';
+import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList } from './types';
 
 const BASE = '/api/v1';
 
@@ -313,4 +313,22 @@ export async function syncGateway() {
 }
 export async function reloadGatewayMappings() {
   return request<{ created: number; updated: number; skipped: string[] }>('/gateway/mappings/reload', { method: 'POST' });
+}
+export async function getGatewaySubscriptions() {
+  return request<GatewaySubscriptionStatus>('/gateway/subscriptions');
+}
+export async function startGatewaySubscriptions() {
+  return request<SubscriptionActionResult>('/gateway/subscriptions/start', { method: 'POST' });
+}
+export async function stopGatewaySubscriptions() {
+  return request<SubscriptionActionResult>('/gateway/subscriptions/stop', { method: 'POST' });
+}
+
+// Industrial Alarms (OPC UA Alarm semantics)
+export async function listAlarms(params?: Record<string, string>) {
+  const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+  return request<IndustrialAlarmList>(`/alarms${qs}`);
+}
+export async function acknowledgeAlarm(id: number) {
+  return request<{ ok: boolean; id: number; acknowledged: boolean }>(`/alarms/${id}/acknowledge`, { method: 'POST' });
 }

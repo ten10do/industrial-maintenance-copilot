@@ -143,7 +143,7 @@ flowchart TB
 | 领域 | 已实现能力 |
 | --- | --- |
 | 设备与遥测 | 资产档案、传感器、实时监测、固定随机种子的电机/轴承软件仿真 |
-| 工业协议接入 | OPC UA Gateway（只读）、OPC UA 设备模拟器、节点映射配置、Data Quality Layer |
+| 工业协议接入 | OPC UA Gateway（只读）、OPC UA 设备模拟器、DataChange 订阅（事件驱动）、节点映射配置、Data Quality Layer、工业报警流水线 |
 | 检测与诊断 | 数据质量、九类故障规则、健康分、结构化诊断、证据与置信度 |
 | 智能工单 | 上报、创建、分派、接单、执行、暂停、完工、验收、退回、状态审计 |
 | 资源调度 | 技能/负载匹配、备件预留与缺口、维护窗口建议 |
@@ -180,6 +180,37 @@ flowchart LR
 
 详细设计、Demo 命令与真实 PLC 接入路径见 [docs/opcua-gateway.md](docs/opcua-gateway.md)。
 注意：当前为模拟工业网关，**尚未连接任何真实工厂 PLC**。
+
+## OPC UA Event-driven Integration
+
+在轮询网关之上，平台增加了 **simulated OPC UA subscription workflow**
+（DataChange 订阅，事件驱动接入），轮询能力完整保留并作为订阅的 fallback：
+
+- **Subscription 抽象**：`OpcUaSubscriptionClient` 协议 + Asyncua / Mock 双实现，
+  不绑定具体协议栈；read-only 约束与轮询客户端一致；
+- **DataChange Handler**：事件经 Node Mapping 与单事件质量闸门进入
+  Event Buffer（batch aggregation + debounce + duplicate suppression，
+  例如 1 秒内同一节点 10 次变化聚合为 1 个最新值）；
+- **复用既有 AI 链路**：flush 时从最新值缓存构建 `TelemetrySnapshot` 并调用
+  同一个 `ingest_snapshot`，不存在第二套 AI pipeline；
+- **工业报警流水线**：NORMAL/WARNING/CRITICAL 状态机（阈值与平台告警一致，
+  Alarm 位直接 CRITICAL），仅状态跃迁时产生/解除 `industrial_alarms` 记录，
+  支持人工确认（acknowledge）；
+- **确定性仿真**：`(seed, scenario, tick)` 唯一决定数值与变更集合，
+  fault 场景起始 tick 振动突升、Alarm 置位，可完整演示事件驱动闭环。
+
+```mermaid
+flowchart LR
+    Device["OPC UA Server\n(simulated)"] -->|DataChange Notification| Sub["OpcUaSubscriptionClient"]
+    Sub --> Handler["on_data_change\nmapping + quality gate"]
+    Handler --> Buffer["Event Buffer\ndebounce / batch / dedupe"]
+    Buffer --> Flush["flush loop\nbuild snapshot from latest cache"]
+    Flush --> Ingest["ingest_snapshot() — 既有 AI 链路"]
+    Flush --> Alarm["Alarm State Machine\n→ industrial_alarms"]
+```
+
+详细设计见 [docs/opcua-subscription.md](docs/opcua-subscription.md)。
+注意：当前为模拟订阅工作流，**尚未连接任何真实工厂 PLC**。
 
 ## Predictive ML Research
 
@@ -430,7 +461,7 @@ industrial-maintenance-copilot/
 ## Known Limitations
 
 - 数据来自受控 bearing test rigs，不是 factory fleet 或真实生产线。
-- 未连接真实 PLC、SCADA、工业相机、物理传感器或生产网络；OPC UA 网关当前为软件模拟形态（OPC UA-compatible simulation），采用轮询而非订阅。
+- 未连接真实 PLC、SCADA、工业相机、物理传感器或生产网络；OPC UA 网关（轮询 + DataChange 订阅）当前为软件模拟形态（OPC UA-compatible simulation）。
 - Fault Frozen Test 只有 6 个独立轴承，且只有 1 个健康轴承。
 - 信号窗口在同一轴承内相关；window-level metrics 不能等同于独立设备泛化。
 - Development Grouped CV 方差较高，worst-fold macro recall 为 0.4548。
@@ -445,9 +476,9 @@ industrial-maintenance-copilot/
 
 研发阶段已经冻结；以下仅为 Future Work，不代表已排期：
 
-- Modbus / PROFINET Equipment Gateway（OPC UA 只读网关已以软件模拟形态落地）
+- Modbus / PROFINET Equipment Gateway（OPC UA 只读网关与 DataChange 订阅已以软件模拟形态落地）
 - Field telemetry integration（真实 PLC / SCADA 接入）
-- OPC UA Subscription 推送模式与证书认证
+- OPC UA Alarm & Conditions（A&C）完整规范与证书认证
 - Larger independent fleet validation
 - External RUL benchmark with clear redistribution license
 - 为后续结构变更持续增加可逆 Alembic revision
@@ -457,6 +488,7 @@ industrial-maintenance-copilot/
 - [平台业务闭环](docs/intelligent-maintenance-platform.md)
 - [系统架构](docs/architecture.md)
 - [OPC UA 工业协议网关](docs/opcua-gateway.md)
+- [OPC UA 事件驱动订阅](docs/opcua-subscription.md)
 - [Controlled Agent workflow](docs/agent-workflow.md)
 - [安全边界](docs/security.md)
 - [真实数据与 Predictive ML Pipeline](docs/real-predictive-ml-pipeline.md)

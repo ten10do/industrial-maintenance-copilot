@@ -49,6 +49,11 @@ class Settings(BaseSettings):
     GATEWAY_MAPPING_CONFIG: str = "configs/opcua-node-mapping.yaml"
     GATEWAY_TIMEOUT_SECONDS: float = Field(default=4.0, ge=1.0)
 
+    # OPC UA DataChange 订阅（事件驱动，只读）。默认关闭，轮询能力保持不变。
+    GATEWAY_SUBSCRIPTION_ENABLED: bool = False
+    GATEWAY_SUBSCRIPTION_SAMPLING_MS: float = Field(default=1000.0, ge=100.0)
+    GATEWAY_SUBSCRIPTION_DEBOUNCE_MS: float = Field(default=1000.0, ge=100.0)
+
     # 存储
     STORAGE_TYPE: str = "local"
     STORAGE_LOCAL_DIR: str = "./uploads"
