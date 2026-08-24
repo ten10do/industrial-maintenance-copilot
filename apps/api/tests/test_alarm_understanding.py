@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 
 from app.industrial_gateway.alarm_intelligence.engine import (
     analyze_root_cause,
+    assess_alarm_risk,
     latest_telemetry_fields,
     understand_alarm,
 )
@@ -72,10 +73,11 @@ def test_root_cause_without_offenders_stays_honest(db):
         telemetry_record_id=None,
         equipment_name="验证电机",
     )
-    assert result.fault_type == "unknown_anomaly"
-    # unknown_anomaly 在平台知识库中有对应条目，假设文本保持诚实。
-    assert "unknown_anomaly" in result.hypothesis
-    assert "根因" in result.hypothesis
+    assert result.fault_type is None
+    assert "insufficient_evidence" in result.hypothesis
+    assert "manual_review_required" in result.hypothesis
+    assert result.confidence < 0.5
+    assert result.citations == []
 
 
 def test_root_cause_citations_degrade_gracefully(db):
@@ -111,3 +113,17 @@ def test_latest_telemetry_fields_reads_record(db, equipment):
     record = db.query(TelemetryRecord).filter_by(equipment_id=equipment.id).one()
     assert record_id == record.id
     assert fields["bearing_temperature"] == 88.0
+
+
+def test_risk_rule_escalates_critical_alarm_with_prediction_support():
+    result = assess_alarm_risk(
+        severity="CRITICAL",
+        confidence=0.75,
+        correlated_alarm_count=2,
+        equipment_health_score=62,
+        equipment_risk_level="high",
+        fault_probability=0.82,
+    )
+    assert result.risk_level == "CRITICAL"
+    assert "fault_probability>=0.70" in result.reasons
+    assert result.inputs["fault_probability"] == 0.82

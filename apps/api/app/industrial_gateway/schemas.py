@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -137,6 +137,10 @@ class IndustrialAlarmOut(BaseModel):
     acknowledged_at: datetime | None
     cleared_at: datetime | None
     created_at: datetime
+    risk_level: str | None = None
+    analysis_status: str = "NEW"
+    correlation_group_id: str | None = None
+    correlated_alarm_count: int = 0
 
 
 class AlarmListOut(BaseModel):
@@ -170,10 +174,32 @@ class AlarmAnalysisOut(BaseModel):
     recommended_actions: list[str]
     suggested_priority: str
     related_work_order_id: int | None
+    created_work_order_id: int | None
+    risk_level: str
+    analysis_status: str
+    review_status: str | None
+    reviewed_by: int | None
+    reviewed_at: datetime | None
+    review_note: str | None
+    agent_run_id: int | None
     requires_human_review: bool
     model_version: str
     is_mock: bool
     created_at: datetime
+
+
+class AlarmReviewIn(BaseModel):
+    action: Literal["approve", "reject", "request_more_evidence"]
+    note: str | None = None
+
+
+class AlarmWorkOrderOut(BaseModel):
+    alarm_id: int
+    analysis_id: int
+    work_order_id: int
+    work_order_code: str
+    status: str
+    created: bool
 
 
 class CorrelationGroupOut(BaseModel):

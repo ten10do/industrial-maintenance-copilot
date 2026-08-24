@@ -180,6 +180,24 @@ class AlarmAnalysisRecord(TimestampMixin, Base):
     related_work_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("work_orders.id", ondelete="SET NULL"), nullable=True
     )
+    created_work_order_id: Mapped[int | None] = mapped_column(
+        ForeignKey("work_orders.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    risk_level: Mapped[str] = mapped_column(String(16), default="MEDIUM", index=True)
+    analysis_status: Mapped[str] = mapped_column(String(32), default="NEW", index=True)
+    review_status: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    reviewed_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agent_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("agent_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     requires_human_review: Mapped[bool] = mapped_column(Boolean, default=True)
     model_version: Mapped[str] = mapped_column(
         String(48), default="deterministic-rules-v1"

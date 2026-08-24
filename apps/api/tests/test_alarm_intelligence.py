@@ -10,7 +10,13 @@ from datetime import UTC, datetime, timedelta
 from app.industrial_gateway.models import AlarmAnalysisRecord, IndustrialAlarm
 from app.models.base import EquipmentStatusEnum, PriorityEnum, RiskLevelEnum
 from app.models.equipment import Equipment
-from app.models.intelligence import TelemetryRecord
+from app.models.intelligence import (
+    AgentRun,
+    OperationApproval,
+    TelemetryRecord,
+    ToolInvocation,
+)
+from app.models.knowledge import KnowledgeArticle
 from app.models.workorder import WorkOrder, WorkOrderStatusEnum, WorkOrderTypeEnum
 
 
@@ -78,6 +84,8 @@ def test_analyze_endpoint_persists_full_intelligence(
     assert payload["requires_human_review"] is True
     assert payload["is_mock"] is True
     assert payload["model_version"] == "deterministic-rules-v1"
+    assert payload["risk_level"] in {"HIGH", "CRITICAL"}
+    assert payload["analysis_status"] == "WAITING_REVIEW"
     # 关联组：单设备单报警也形成组。
     assert payload["correlation_group_id"]
 
@@ -85,6 +93,16 @@ def test_analyze_endpoint_persists_full_intelligence(
     # 决策支持证据已随分析持久化（含建议优先级与关联工单提示）。
     assert "suggested_priority" in record.evidence["decision_support"]
     assert record.recommended_actions
+    assert record.agent_run_id is not None
+    run = db.get(AgentRun, record.agent_run_id)
+    assert run is not None
+    assert run.status == "completed"
+    assert run.input["alarm_event_id"] == alarm.id
+    tool_names = {
+        item.tool_name
+        for item in db.query(ToolInvocation).filter_by(agent_run_id=run.id).all()
+    }
+    assert tool_names == {"alarm_correlation", "maintenance_knowledge_search"}
     # 幂等：重复分析覆盖同一记录。
     again = client.post(f"/api/v1/alarms/{alarm.id}/analyze", headers=headers)
     assert again.status_code == 200
@@ -199,6 +217,93 @@ def test_decision_support_links_open_work_order(client, db, supervisor, equipmen
     assert any(item["code"] == "WO-AI-001" for item in related)
 
 
+def test_rag_citation_is_backed_by_published_article(
+    client, db, supervisor, equipment_type
+):
+    equipment, alarm = _setup(db)
+    equipment.equipment_type_id = equipment_type.id
+    article = KnowledgeArticle(
+        title="轴承过热处置手册",
+        content="报警智能验证电机 bearing overheat 轴承温度越限时执行现场点检。",
+        summary="轴承温度越限处置",
+        source="equipment-manual",
+        status="published",
+        equipment_type_id=equipment_type.id,
+    )
+    db.add(article)
+    db.commit()
+
+    from app.core.security import create_access_token
+
+    headers = {"Authorization": f"Bearer {create_access_token(str(supervisor.id))}"}
+    response = client.post(f"/api/v1/alarms/{alarm.id}/analyze", headers=headers)
+    assert response.status_code == 200
+    citation = response.json()["citations"][0]
+    assert citation["article_id"] == article.id
+    assert citation["document_id"] == article.id
+    assert citation["source"] == "equipment-manual"
+    assert citation["snippet"]
+
+
+def test_review_gate_and_work_order_creation_are_idempotent(client, db, supervisor):
+    _equipment, alarm = _setup(db)
+    from app.core.security import create_access_token
+
+    headers = {"Authorization": f"Bearer {create_access_token(str(supervisor.id))}"}
+    analyzed = client.post(f"/api/v1/alarms/{alarm.id}/analyze", headers=headers)
+    assert analyzed.status_code == 200
+
+    blocked = client.post(
+        f"/api/v1/alarms/{alarm.id}/create-work-order", headers=headers
+    )
+    assert blocked.status_code == 409
+    assert db.query(WorkOrder).count() == 0
+
+    reviewed = client.post(
+        f"/api/v1/alarms/{alarm.id}/review",
+        headers=headers,
+        json={"action": "approve", "note": "证据已人工复核"},
+    )
+    assert reviewed.status_code == 200
+    assert reviewed.json()["analysis_status"] == "APPROVED"
+    assert reviewed.json()["reviewed_by"] == supervisor.id
+
+    created = client.post(
+        f"/api/v1/alarms/{alarm.id}/create-work-order", headers=headers
+    )
+    assert created.status_code == 200
+    assert created.json()["created"] is True
+    assert created.json()["status"] == "pending_dispatch"
+    repeated = client.post(
+        f"/api/v1/alarms/{alarm.id}/create-work-order", headers=headers
+    )
+    assert repeated.status_code == 200
+    assert repeated.json()["created"] is False
+    assert repeated.json()["work_order_id"] == created.json()["work_order_id"]
+    assert db.query(WorkOrder).count() == 1
+    # 创建工单本身不伪造设备命令审批；后续设备命令仍必须走既有审批流。
+    assert db.query(OperationApproval).count() == 0
+
+
+def test_request_more_evidence_cannot_create_work_order(client, db, supervisor):
+    _equipment, alarm = _setup(db)
+    from app.core.security import create_access_token
+
+    headers = {"Authorization": f"Bearer {create_access_token(str(supervisor.id))}"}
+    client.post(f"/api/v1/alarms/{alarm.id}/analyze", headers=headers)
+    review = client.post(
+        f"/api/v1/alarms/{alarm.id}/review",
+        headers=headers,
+        json={"action": "request_more_evidence", "note": "补充振动频谱"},
+    )
+    assert review.status_code == 200
+    assert review.json()["analysis_status"] == "WAITING_REVIEW"
+    blocked = client.post(
+        f"/api/v1/alarms/{alarm.id}/create-work-order", headers=headers
+    )
+    assert blocked.status_code == 409
+
+
 def test_no_device_control_endpoints_added(client):
     """安全：Alarm Intelligence 不引入任何设备控制端点。"""
     schema = client.get("/openapi.json").json()
@@ -206,9 +311,12 @@ def test_no_device_control_endpoints_added(client):
     assert alarm_paths == {
         "/api/v1/alarms",
         "/api/v1/alarms/correlate",
+        "/api/v1/alarms/{alarm_id}",
         "/api/v1/alarms/{alarm_id}/acknowledge",
         "/api/v1/alarms/{alarm_id}/analyze",
         "/api/v1/alarms/{alarm_id}/analysis",
+        "/api/v1/alarms/{alarm_id}/review",
+        "/api/v1/alarms/{alarm_id}/create-work-order",
     }
     for path in alarm_paths:
         assert "write" not in path

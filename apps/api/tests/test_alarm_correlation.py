@@ -106,3 +106,15 @@ def test_group_id_is_deterministic_for_same_members():
     group_a = correlate_alarm_snapshots(snapshots_a)[0]
     group_b = correlate_alarm_snapshots(snapshots_b)[0]
     assert group_a.group_id == group_b.group_id
+
+
+def test_unrelated_metric_families_on_same_equipment_are_not_merged():
+    base = datetime.now(UTC)
+    groups = correlate_alarm_snapshots(
+        [
+            AlarmSnapshot(1, 10, "WARNING", "轴承温度=82", base),
+            AlarmSnapshot(2, 10, "WARNING", "电压异常=450", base),
+        ],
+        window_seconds=300,
+    )
+    assert len(groups) == 2

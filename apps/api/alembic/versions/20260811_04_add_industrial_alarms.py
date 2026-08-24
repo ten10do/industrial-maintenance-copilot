@@ -11,6 +11,7 @@ Revises: 20260811_03
 from typing import NoReturn
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260811_04"
@@ -46,9 +47,7 @@ def upgrade() -> None:
         sa.Column(
             "updated_at", sa.DateTime(timezone=True), server_default=sa.func.now()
         ),
-        sa.ForeignKeyConstraint(
-            ["equipment_id"], ["equipment.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["equipment_id"], ["equipment.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["acknowledged_by"], ["users.id"], ondelete="SET NULL"),
     )
     op.create_index("ix_industrial_alarms_equipment_id", _TABLE, ["equipment_id"])

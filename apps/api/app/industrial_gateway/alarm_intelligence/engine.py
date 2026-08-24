@@ -18,6 +18,7 @@ from typing import Any, Final
 from sqlalchemy.orm import Session
 
 from app.ai.knowledge_search import search_articles
+from app.models.base import RiskLevelEnum
 from app.models.intelligence import TelemetryRecord
 from app.services.intelligence_service import FAULT_GUIDANCE
 
@@ -155,6 +156,8 @@ class RootCauseAnalysisResult:
     evidence: dict[str, Any] = field(default_factory=dict)
     citations: list[dict[str, Any]] = field(default_factory=list)
     confidence: float = 0.5
+    confidence_factors: list[str] = field(default_factory=list)
+    evidence_conflicts: list[str] = field(default_factory=list)
 
 
 def analyze_root_cause(
@@ -166,6 +169,7 @@ def analyze_root_cause(
     telemetry_record_id: int | None,
     equipment_name: str,
     equipment_type_id: int | None = None,
+    prediction_context: dict[str, Any] | None = None,
 ) -> RootCauseAnalysisResult:
     """给出根因假设与证据链（确定性规则 + 只读知识检索）。"""
     abnormal = _abnormal_metrics(telemetry_fields)
@@ -179,16 +183,21 @@ def analyze_root_cause(
     if abnormal:
         fault_type = METRIC_FAULT_HYPOTHESIS.get(abnormal[0]["metric"])
     elif severity == "CRITICAL":
-        fault_type = "unknown_anomaly"
+        fault_type = None
 
     guidance = FAULT_GUIDANCE.get(fault_type or "", None)
     if guidance and fault_type:
         cause_text = guidance[0]
         hypothesis = f"根因假设（{fault_type}）：{cause_text}"
-    else:
+    elif abnormal:
         hypothesis = (
             "根因假设：多信号复合或瞬态触发，规则层无法唯一确定根因；"
             "建议结合频谱/趋势与现场点检进一步确认。"
+        )
+    else:
+        hypothesis = (
+            "insufficient_evidence / manual_review_required：当前没有可验证的"
+            "遥测越限或知识证据，不能给出高置信度根因。"
         )
 
     evidence: dict[str, Any] = {
@@ -197,6 +206,7 @@ def analyze_root_cause(
         "telemetry_record_id": telemetry_record_id,
         "telemetry_fields": {key: value for key, value in telemetry_fields.items()},
         "abnormal_metrics": abnormal,
+        "prediction_context": prediction_context,
     }
 
     citations: list[dict[str, Any]] = []
@@ -215,22 +225,55 @@ def analyze_root_cause(
     except Exception:  # pragma: no cover - 知识库不可用时降级为空引用
         articles = []
     for article in articles:
+        content = str(article.get("summary") or article.get("content") or "")
         citations.append(
             {
                 "article_id": article.get("article_id"),
+                "document_id": article.get("article_id"),
                 "title": article.get("title"),
+                "source": article.get("source") or article.get("category"),
+                "section": None,
+                "snippet": content[:240],
                 "score": article.get("score"),
             }
         )
 
-    confidence = 0.55
+    confidence = 0.0
+    confidence_factors: list[str] = []
+    conflicts: list[str] = []
+    if abnormal:
+        confidence += 0.35
+        confidence_factors.append("telemetry_threshold_evidence:+0.35")
     if len(abnormal) >= 2:
-        confidence += 0.15
-    if fault_type is not None and guidance:
         confidence += 0.1
+        confidence_factors.append("multiple_consistent_signals:+0.10")
+    if fault_type is not None and guidance:
+        confidence += 0.2
+        confidence_factors.append("deterministic_guidance_match:+0.20")
     if citations:
+        confidence += 0.15
+        confidence_factors.append("rag_evidence:+0.15")
+    if prediction_context:
+        predicted_mode = str(prediction_context.get("failure_mode") or "")
+        probability = float(prediction_context.get("probability") or 0.0)
+        if fault_type and predicted_mode and fault_type not in predicted_mode:
+            confidence -= 0.2
+            conflicts.append(
+                f"预测故障模式 {predicted_mode} 与规则根因 {fault_type} 不一致"
+            )
+            confidence_factors.append("conflicting_prediction:-0.20")
+        elif probability >= 0.5:
+            confidence += 0.15
+            confidence_factors.append("fault_prediction_support:+0.15")
+    if severity == "CRITICAL":
         confidence += 0.05
+        confidence_factors.append("critical_alarm_signal:+0.05")
+    if not citations:
+        confidence_factors.append("rag_evidence_absent:+0.00")
+    confidence = max(confidence, 0.1)
     confidence = min(confidence, 0.85)
+    evidence["confidence_factors"] = confidence_factors
+    evidence["evidence_conflicts"] = conflicts
 
     return RootCauseAnalysisResult(
         hypothesis=hypothesis,
@@ -239,6 +282,76 @@ def analyze_root_cause(
         evidence=evidence,
         citations=citations,
         confidence=round(confidence, 2),
+        confidence_factors=confidence_factors,
+        evidence_conflicts=conflicts,
+    )
+
+
+@dataclass(slots=True, frozen=True)
+class RiskAssessmentResult:
+    """透明的报警风险规则输出。"""
+
+    risk_level: str
+    reasons: list[str]
+    inputs: dict[str, Any]
+
+
+def assess_alarm_risk(
+    *,
+    severity: str,
+    confidence: float,
+    correlated_alarm_count: int,
+    equipment_health_score: float | None,
+    equipment_risk_level: RiskLevelEnum | str | None,
+    fault_probability: float | None,
+) -> RiskAssessmentResult:
+    """综合报警、预测和设备状态，按可解释规则给出风险等级。"""
+    level = "LOW"
+    reasons: list[str] = []
+    normalized_equipment_risk = (
+        equipment_risk_level.value
+        if isinstance(equipment_risk_level, RiskLevelEnum)
+        else str(equipment_risk_level or "").lower()
+    )
+    if severity.upper() == "WARNING":
+        level = "MEDIUM"
+        reasons.append("industrial_alarm=WARNING")
+    if severity.upper() == "CRITICAL":
+        level = "HIGH"
+        reasons.append("industrial_alarm=CRITICAL")
+    strong_support = False
+    if fault_probability is not None and fault_probability >= 0.7:
+        strong_support = True
+        reasons.append("fault_probability>=0.70")
+    if equipment_health_score is not None and equipment_health_score <= 50:
+        strong_support = True
+        reasons.append("health_score<=50")
+    if correlated_alarm_count >= 3:
+        strong_support = True
+        reasons.append("correlated_alarm_count>=3")
+    if normalized_equipment_risk in {"high", "critical"}:
+        reasons.append(f"equipment_risk={normalized_equipment_risk}")
+        if normalized_equipment_risk == "critical":
+            strong_support = True
+        if level == "MEDIUM":
+            level = "HIGH"
+    if severity.upper() == "CRITICAL" and strong_support:
+        level = "CRITICAL"
+    elif level == "MEDIUM" and strong_support:
+        level = "HIGH"
+    if confidence < 0.5:
+        reasons.append("diagnosis_confidence<0.50_requires_review")
+    return RiskAssessmentResult(
+        risk_level=level,
+        reasons=reasons,
+        inputs={
+            "alarm_severity": severity.upper(),
+            "diagnosis_confidence": confidence,
+            "correlated_alarm_count": correlated_alarm_count,
+            "equipment_health_score": equipment_health_score,
+            "equipment_risk_level": normalized_equipment_risk or None,
+            "fault_probability": fault_probability,
+        },
     )
 
 

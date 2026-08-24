@@ -11,6 +11,7 @@ Revises: 20260811_04
 from typing import NoReturn
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260811_05"

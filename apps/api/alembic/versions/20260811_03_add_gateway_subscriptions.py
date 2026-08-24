@@ -11,6 +11,7 @@ Revises: 20260811_02
 from typing import NoReturn
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260811_03"
@@ -51,14 +52,10 @@ def upgrade() -> None:
             "gateway_id", "node_id", name="uq_gateway_subscription_gateway_node"
         ),
     )
-    op.create_index(
-        "ix_gateway_subscriptions_gateway_id", _TABLE, ["gateway_id"]
-    )
+    op.create_index("ix_gateway_subscriptions_gateway_id", _TABLE, ["gateway_id"])
     op.create_index("ix_gateway_subscriptions_node_id", _TABLE, ["node_id"])
     op.create_index("ix_gateway_subscriptions_status", _TABLE, ["status"])
 
 
 def downgrade() -> NoReturn:
-    raise RuntimeError(
-        "订阅表不支持破坏性降级；如确需删除请手工处理并确认无业务依赖"
-    )
+    raise RuntimeError("订阅表不支持破坏性降级；如确需删除请手工处理并确认无业务依赖")

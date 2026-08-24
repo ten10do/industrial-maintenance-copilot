@@ -37,6 +37,7 @@ class AlarmSnapshot:
     severity: str
     message: str
     created_at: datetime
+    alarm_type: str | None = None
 
 
 @dataclass(slots=True)
@@ -72,7 +73,37 @@ def _snapshot_of(alarm: IndustrialAlarm) -> AlarmSnapshot:
         severity=alarm.severity,
         message=alarm.message,
         created_at=alarm.created_at,
+        alarm_type=_alarm_type_from_message(alarm.message),
     )
+
+
+def _alarm_type_from_message(message: str) -> str:
+    """从既有报警文本提取稳定的指标族，不引入第二套报警分类模型。"""
+    normalized = message.lower()
+    rules = (
+        (("bearing", "轴承温度", "温升"), "bearing_temperature"),
+        (("vibration", "振动"), "vibration"),
+        (("current", "电流", "负载"), "motor_load"),
+        (("voltage", "电压"), "voltage"),
+        (("alarm 位", "alarm bit", "alarm）"), "alarm_bit"),
+    )
+    for keywords, alarm_type in rules:
+        if any(keyword in normalized for keyword in keywords):
+            return alarm_type
+    return "unknown"
+
+
+def _types_are_related(left: AlarmSnapshot, right: AlarmSnapshot) -> bool:
+    left_type = left.alarm_type or _alarm_type_from_message(left.message)
+    right_type = right.alarm_type or _alarm_type_from_message(right.message)
+    if left_type == right_type or "unknown" in {left_type, right_type}:
+        return True
+    # 温升 + 振动是轴承退化的透明复合信号；Alarm 位可与同设备物理量关联。
+    return {left_type, right_type} <= {
+        "bearing_temperature",
+        "vibration",
+        "alarm_bit",
+    }
 
 
 def correlate_alarm_snapshots(
@@ -97,6 +128,8 @@ def correlate_alarm_snapshots(
         for chain in reversed(chains):
             tail = chain[-1]
             if tail.equipment_id != snapshot.equipment_id:
+                continue
+            if not _types_are_related(tail, snapshot):
                 continue
             gap = (snapshot.created_at - tail.created_at).total_seconds()
             if 0 <= gap <= window_seconds:

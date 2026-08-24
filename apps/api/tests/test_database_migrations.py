@@ -34,13 +34,13 @@ def test_alembic_upgrade_creates_and_versions_new_database(tmp_path):
 
     upgrade_database(engine)
 
-    assert current_revision(engine) == "20260811_05"
+    assert current_revision(engine) == "20260824_06"
     assert database_is_at_head(engine) is True
     assert schema_is_ready(engine) is True
     tables = set(inspect(engine).get_table_names())
     upgrade_database(engine)
     assert set(inspect(engine).get_table_names()) == tables
-    assert current_revision(engine) == "20260811_05"
+    assert current_revision(engine) == "20260824_06"
 
 
 def test_alembic_adopts_unversioned_legacy_database_without_losing_data(tmp_path):
@@ -61,7 +61,7 @@ def test_alembic_adopts_unversioned_legacy_database_without_losing_data(tmp_path
 
     upgrade_database(engine)
 
-    assert current_revision(engine) == "20260811_05"
+    assert current_revision(engine) == "20260824_06"
     with engine.connect() as connection:
         legacy_row = connection.execute(
             text(
