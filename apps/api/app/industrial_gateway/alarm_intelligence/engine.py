@@ -170,6 +170,8 @@ def analyze_root_cause(
     equipment_name: str,
     equipment_type_id: int | None = None,
     prediction_context: dict[str, Any] | None = None,
+    anomaly_context: dict[str, Any] | None = None,
+    equipment_context: dict[str, Any] | None = None,
 ) -> RootCauseAnalysisResult:
     """给出根因假设与证据链（确定性规则 + 只读知识检索）。"""
     abnormal = _abnormal_metrics(telemetry_fields)
@@ -207,12 +209,16 @@ def analyze_root_cause(
         "telemetry_fields": {key: value for key, value in telemetry_fields.items()},
         "abnormal_metrics": abnormal,
         "prediction_context": prediction_context,
+        "anomaly_context": anomaly_context,
+        "equipment_context": equipment_context,
     }
 
     citations: list[dict[str, Any]] = []
     query_parts = [equipment_name]
     if fault_type:
         query_parts.append(fault_type.replace("_", " "))
+    if anomaly_context and anomaly_context.get("fault_type"):
+        query_parts.append(str(anomaly_context["fault_type"]).replace("_", " "))
     for item in abnormal:
         query_parts.append(str(item["label"]))
     try:

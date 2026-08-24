@@ -42,7 +42,12 @@ from app.industrial_gateway.schemas import (
 )
 from app.models.base import PriorityEnum, WorkOrderStatusEnum, WorkOrderTypeEnum
 from app.models.equipment import Equipment
-from app.models.intelligence import AgentRun, RiskPrediction, ToolInvocation
+from app.models.intelligence import (
+    AgentRun,
+    AnomalyEvent,
+    RiskPrediction,
+    ToolInvocation,
+)
 from app.models.user import User
 from app.models.workorder import (
     WorkOrder,
@@ -269,6 +274,24 @@ def analyze_alarm(
         if prediction
         else None
     )
+    anomaly = (
+        db.query(AnomalyEvent)
+        .filter(AnomalyEvent.equipment_id == alarm.equipment_id)
+        .order_by(AnomalyEvent.detected_at.desc())
+        .first()
+    )
+    anomaly_context = (
+        {
+            "anomaly_event_id": anomaly.id,
+            "fault_type": anomaly.fault_type,
+            "severity": anomaly.severity.value,
+            "confidence": anomaly.confidence,
+            "evidence": anomaly.evidence,
+            "detected_at": anomaly.detected_at.isoformat(),
+        }
+        if anomaly
+        else None
+    )
     rca = analyze_root_cause(
         db,
         severity=alarm.severity,
@@ -278,6 +301,14 @@ def analyze_alarm(
         equipment_name=equipment.name,
         equipment_type_id=equipment.equipment_type_id,
         prediction_context=prediction_context,
+        anomaly_context=anomaly_context,
+        equipment_context={
+            "equipment_id": equipment.id,
+            "code": equipment.code,
+            "health_score": equipment.health_score,
+            "risk_level": equipment.risk_level.value,
+            "production_line": equipment.production_line,
+        },
     )
     decision = build_decision_support(
         db,

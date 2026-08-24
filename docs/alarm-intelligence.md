@@ -34,7 +34,8 @@ OPC UA subscription / polling
 
 ## Root Cause Analysis
 
-输入包括原始报警、最新遥测、设备元数据、最新故障预测与关联报警数。根因只是
+输入包括原始报警、最新遥测、既有异常事件证据、设备元数据/健康分、最新故障预测
+与关联报警数。根因只是
 假设；置信度由遥测越限、多信号一致性、确定性处置知识、真实 RAG 命中、预测支持
 和冲突扣分组成，最高 0.85。没有可验证证据时返回
 `insufficient_evidence / manual_review_required`，不得生成高置信度结论。

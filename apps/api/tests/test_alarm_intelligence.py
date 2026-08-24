@@ -12,6 +12,7 @@ from app.models.base import EquipmentStatusEnum, PriorityEnum, RiskLevelEnum
 from app.models.equipment import Equipment
 from app.models.intelligence import (
     AgentRun,
+    AnomalyEvent,
     OperationApproval,
     TelemetryRecord,
     ToolInvocation,
@@ -31,16 +32,28 @@ def _setup(db) -> tuple[Equipment, IndustrialAlarm]:
     )
     db.add(equipment)
     db.flush()
+    telemetry = TelemetryRecord(
+        equipment_id=equipment.id,
+        collected_at=datetime.now(UTC),
+        bearing_temperature=92.0,
+        vibration_rms=4.9,
+        motor_current=19.0,
+        motor_voltage=381.0,
+        load_ratio=66.0,
+        cumulative_runtime_hours=500.0,
+    )
+    db.add(telemetry)
+    db.flush()
     db.add(
-        TelemetryRecord(
+        AnomalyEvent(
             equipment_id=equipment.id,
-            collected_at=datetime.now(UTC),
-            bearing_temperature=92.0,
-            vibration_rms=4.9,
-            motor_current=19.0,
-            motor_voltage=381.0,
-            load_ratio=66.0,
-            cumulative_runtime_hours=500.0,
+            telemetry_id=telemetry.id,
+            fault_type="bearing_overheat",
+            title="轴承温度异常",
+            severity=RiskLevelEnum.high,
+            evidence={"anomaly_metrics": ["bearing_temperature"]},
+            confidence=0.78,
+            detected_at=telemetry.collected_at,
         )
     )
     alarm = IndustrialAlarm(
@@ -88,6 +101,8 @@ def test_analyze_endpoint_persists_full_intelligence(
     assert payload["analysis_status"] == "WAITING_REVIEW"
     # 关联组：单设备单报警也形成组。
     assert payload["correlation_group_id"]
+    assert payload["evidence"]["anomaly_context"]["fault_type"] == "bearing_overheat"
+    assert payload["evidence"]["equipment_context"]["health_score"] == 100.0
 
     record = db.query(AlarmAnalysisRecord).filter_by(alarm_id=alarm.id).one()
     # 决策支持证据已随分析持久化（含建议优先级与关联工单提示）。
