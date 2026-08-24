@@ -82,7 +82,9 @@ class WorkOrder(AuditMixin, Base):
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])  # type: ignore[name-defined]
     creator: Mapped[User | None] = relationship(foreign_keys=[created_by_id])  # type: ignore[name-defined]
     checklist_items: Mapped[list[WorkOrderChecklistItem]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="WorkOrderChecklistItem.order",
+        cascade="all, delete-orphan",
     )
     logs: Mapped[list[MaintenanceLog]] = relationship(
         back_populates="work_order", cascade="all, delete-orphan"
