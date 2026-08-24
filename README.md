@@ -196,6 +196,8 @@ flowchart LR
 - **工业报警流水线**：NORMAL/WARNING/CRITICAL 状态机（阈值与平台告警一致，
   Alarm 位直接 CRITICAL），仅状态跃迁时产生/解除 `industrial_alarms` 记录，
   支持人工确认（acknowledge）；
+- **报警智能分析**：在既有报警之上提供确定性关联、证据约束根因假设、RAG 引用、
+  透明风险规则、人工复核和受控工单创建；不执行设备命令；
 - **确定性仿真**：`(seed, scenario, tick)` 唯一决定数值与变更集合，
   fault 场景起始 tick 振动突升、Alarm 置位，可完整演示事件驱动闭环。
 
@@ -210,6 +212,7 @@ flowchart LR
 ```
 
 详细设计见 [docs/opcua-subscription.md](docs/opcua-subscription.md)。
+报警分析与人工决策门见 [docs/alarm-intelligence.md](docs/alarm-intelligence.md)。
 注意：当前为模拟订阅工作流，**尚未连接任何真实工厂 PLC**。
 
 ## Predictive ML Research
