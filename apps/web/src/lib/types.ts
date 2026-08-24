@@ -453,6 +453,10 @@ export interface IndustrialAlarm {
   acknowledged_at: string | null;
   cleared_at: string | null;
   created_at: string;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | null;
+  analysis_status: string;
+  correlation_group_id: string | null;
+  correlated_alarm_count: number;
 }
 
 export interface IndustrialAlarmList {
@@ -471,15 +475,32 @@ export interface AlarmAnalysis {
   root_cause_hypothesis: string;
   contributing_factors: string[];
   evidence: Record<string, unknown>;
-  citations: Array<{ article_id?: number; title?: string; score?: number }>;
+  citations: Array<Record<string, string | number | null | undefined>>;
   confidence: number;
   recommended_actions: string[];
   suggested_priority: string;
   related_work_order_id: number | null;
+  created_work_order_id: number | null;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  analysis_status: string;
+  review_status: 'approve' | 'reject' | 'request_more_evidence' | null;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  agent_run_id: number | null;
   requires_human_review: boolean;
   model_version: string;
   is_mock: boolean;
   created_at: string;
+}
+
+export interface AlarmWorkOrderResult {
+  alarm_id: number;
+  analysis_id: number;
+  work_order_id: number;
+  work_order_code: string;
+  status: string;
+  created: boolean;
 }
 
 export interface AlarmCorrelationGroup {

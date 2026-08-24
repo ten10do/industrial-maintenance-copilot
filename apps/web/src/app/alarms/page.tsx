@@ -4,7 +4,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { BellRing, BrainCircuit, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useAuth } from '@/lib/auth';
-import { acknowledgeAlarm, analyzeAlarm, correlateAlarms, listAlarms } from '@/lib/api';
+import {
+  acknowledgeAlarm,
+  analyzeAlarm,
+  correlateAlarms,
+  createAlarmWorkOrder,
+  listAlarms,
+  reviewAlarm,
+} from '@/lib/api';
 import type { AlarmAnalysis, AlarmCorrelateResult, IndustrialAlarm } from '@/lib/types';
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -76,6 +83,43 @@ export default function AlarmsPage() {
     }
   };
 
+  const review = async (action: 'approve' | 'reject' | 'request_more_evidence') => {
+    if (!selectedAlarmId) return;
+    setBusy(true);
+    try {
+      const analysis = await reviewAlarm(selectedAlarmId, action);
+      setAnalyses((current) => ({ ...current, [selectedAlarmId]: analysis }));
+      toast.success(action === 'approve' ? '分析已批准' : action === 'reject' ? '分析已驳回' : '已要求补充证据');
+      await refresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createWorkOrder = async () => {
+    if (!selectedAlarmId) return;
+    setBusy(true);
+    try {
+      const result = await createAlarmWorkOrder(selectedAlarmId);
+      setAnalyses((current) => ({
+        ...current,
+        [selectedAlarmId]: {
+          ...current[selectedAlarmId],
+          analysis_status: 'WORK_ORDER_CREATED',
+          created_work_order_id: result.work_order_id,
+        },
+      }));
+      toast.success(`${result.work_order_code} 已创建`);
+      await refresh();
+    } catch (error: any) {
+      toast.error(error.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="max-w-7xl mx-auto space-y-6" data-testid="alarms-page">
       <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
@@ -114,10 +158,12 @@ export default function AlarmsPage() {
             <thead>
               <tr className="text-left text-xs text-muted border-b border-card-border">
                 <th className="py-2 pr-3">级别</th>
+                <th className="py-2 pr-3">风险</th>
                 <th className="py-2 pr-3">设备</th>
                 <th className="py-2 pr-3">消息</th>
                 <th className="py-2 pr-3">时间</th>
                 <th className="py-2 pr-3">状态</th>
+                <th className="py-2 pr-3">分析</th>
                 <th className="py-2 pr-3">操作</th>
               </tr>
             </thead>
@@ -127,6 +173,7 @@ export default function AlarmsPage() {
                   <td className="py-2 pr-3">
                     <span className={`badge ${SEVERITY_STYLES[alarm.severity] || 'bg-gray-500/15 text-gray-300'}`}>{alarm.severity}</span>
                   </td>
+                  <td className="py-2 pr-3 text-xs">{alarm.risk_level || '待分析'}</td>
                   <td className="py-2 pr-3 font-mono text-xs">#{alarm.equipment_id}</td>
                   <td className="py-2 pr-3">{alarm.message}</td>
                   <td className="py-2 pr-3 text-xs text-muted">{formatTime(alarm.created_at)}</td>
@@ -137,6 +184,10 @@ export default function AlarmsPage() {
                       <span className="text-red-400">活动中</span>
                     )}
                     {alarm.acknowledged && <span className="ml-2 badge bg-primary-500/15 text-primary-300">已确认</span>}
+                  </td>
+                  <td className="py-2 pr-3 text-xs">
+                    <div>{alarm.analysis_status || 'NEW'}</div>
+                    <div className="text-muted">关联 {alarm.correlated_alarm_count || 0} 条</div>
                   </td>
                   <td className="py-2 pr-3 space-x-2 whitespace-nowrap">
                     {!alarm.acknowledged && (
@@ -185,17 +236,21 @@ export default function AlarmsPage() {
         <div className="card" data-testid="analysis-panel">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold flex items-center gap-2"><BrainCircuit size={16} className="text-primary-400" />报警智能分析（AI-assisted，仅供人工决策参考）</h2>
-            <span className="text-xs text-muted">置信度 {(analyses[selectedAlarmId].confidence * 100).toFixed(0)}% · 建议优先级 {analyses[selectedAlarmId].suggested_priority}</span>
+            <span className="text-xs text-muted">风险 {analyses[selectedAlarmId].risk_level} · 置信度 {(analyses[selectedAlarmId].confidence * 100).toFixed(0)}% · {analyses[selectedAlarmId].analysis_status}</span>
           </div>
           <div className="space-y-3 text-sm">
             <AnalysisBlock title="报警理解" body={analyses[selectedAlarmId].summary} />
             <AnalysisBlock title="根因假设" body={analyses[selectedAlarmId].root_cause_hypothesis} />
+            <EvidenceDetails evidence={analyses[selectedAlarmId].evidence} />
             {analyses[selectedAlarmId].citations.length > 0 && (
               <div>
                 <div className="text-xs text-muted mb-1">知识库引用</div>
                 <ul className="list-disc list-inside text-xs text-muted">
                   {analyses[selectedAlarmId].citations.map((citation, index) => (
-                    <li key={`${citation.article_id}-${index}`}>{citation.title}（得分 {citation.score}）</li>
+                    <li key={`${citation.article_id}-${index}`}>
+                      {citation.title} · {citation.source || '知识库'}（得分 {citation.score}）
+                      {citation.snippet && <span className="block pl-4">{citation.snippet}</span>}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -217,6 +272,21 @@ export default function AlarmsPage() {
               <ShieldCheck size={14} className="mt-0.5 shrink-0" />
               本分析不会自动创建或执行任何设备控制；任何操作必须通过工单与 Human Approval 审批流。
             </p>
+            {canControl && analyses[selectedAlarmId].analysis_status === 'WAITING_REVIEW' && (
+              <div className="flex flex-wrap gap-2" data-testid="review-actions">
+                <button disabled={busy} onClick={() => review('approve')} className="btn btn-primary btn-sm">批准分析</button>
+                <button disabled={busy} onClick={() => review('request_more_evidence')} className="btn btn-outline btn-sm">要求补证</button>
+                <button disabled={busy} onClick={() => review('reject')} className="btn btn-outline btn-sm">驳回分析</button>
+              </div>
+            )}
+            {canControl && analyses[selectedAlarmId].analysis_status === 'APPROVED' && (
+              <button disabled={busy} onClick={createWorkOrder} className="btn btn-primary btn-sm" data-testid="create-alarm-work-order">
+                创建受控工单
+              </button>
+            )}
+            {analyses[selectedAlarmId].created_work_order_id && (
+              <p className="text-xs text-green-400">已创建工单 #{analyses[selectedAlarmId].created_work_order_id}</p>
+            )}
           </div>
         </div>
       )}
@@ -234,6 +304,28 @@ function AnalysisBlock({ title, body }: { title: string; body: string }) {
     <div>
       <div className="text-xs text-muted mb-1">{title}</div>
       <p className="rounded-lg bg-black/10 border border-card-border p-3">{body}</p>
+    </div>
+  );
+}
+
+function EvidenceDetails({ evidence }: { evidence: Record<string, unknown> }) {
+  const telemetry = evidence.telemetry_fields as Record<string, unknown> | undefined;
+  const prediction = evidence.prediction_context as Record<string, unknown> | undefined;
+  const risk = evidence.risk_assessment as { reasons?: string[] } | undefined;
+  return (
+    <div className="grid md:grid-cols-3 gap-2 text-xs" data-testid="evidence-details">
+      <div className="rounded-lg border border-card-border p-3">
+        <div className="text-muted mb-1">遥测证据</div>
+        <div>{telemetry ? Object.entries(telemetry).map(([key, value]) => `${key}=${value ?? '--'}`).join(' · ') : '无'}</div>
+      </div>
+      <div className="rounded-lg border border-card-border p-3">
+        <div className="text-muted mb-1">故障预测</div>
+        <div>{prediction ? `${prediction.failure_mode || '未知'} · probability=${prediction.probability ?? '--'}` : '无预测记录'}</div>
+      </div>
+      <div className="rounded-lg border border-card-border p-3">
+        <div className="text-muted mb-1">风险规则</div>
+        <div>{risk?.reasons?.join(' · ') || '无附加升级条件'}</div>
+      </div>
     </div>
   );
 }

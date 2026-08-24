@@ -7,12 +7,16 @@ const mockListAlarms = jest.fn();
 const mockAcknowledgeAlarm = jest.fn();
 const mockAnalyzeAlarm = jest.fn();
 const mockCorrelateAlarms = jest.fn();
+const mockReviewAlarm = jest.fn();
+const mockCreateAlarmWorkOrder = jest.fn();
 
 jest.mock('@/lib/api', () => ({
   listAlarms: (...args: unknown[]) => mockListAlarms(...args),
   acknowledgeAlarm: (...args: unknown[]) => mockAcknowledgeAlarm(...args),
   analyzeAlarm: (...args: unknown[]) => mockAnalyzeAlarm(...args),
   correlateAlarms: (...args: unknown[]) => mockCorrelateAlarms(...args),
+  reviewAlarm: (...args: unknown[]) => mockReviewAlarm(...args),
+  createAlarmWorkOrder: (...args: unknown[]) => mockCreateAlarmWorkOrder(...args),
 }));
 
 jest.mock('@/lib/auth', () => ({
@@ -60,6 +64,10 @@ describe('industrial alarm center page', () => {
     jest.clearAllMocks();
     mockListAlarms.mockResolvedValue(alarmPayload);
     mockAcknowledgeAlarm.mockResolvedValue({ ok: true, id: 9, acknowledged: true });
+    mockCreateAlarmWorkOrder.mockResolvedValue({
+      alarm_id: 9, analysis_id: 1, work_order_id: 77,
+      work_order_code: 'WO-ALARM-77', status: 'pending_dispatch', created: true,
+    });
   });
 
   it('renders alarm severity, equipment, timestamp and status', async () => {
@@ -97,6 +105,14 @@ describe('industrial alarm center page', () => {
       recommended_actions: ['降低负载并安排维护窗口', '处理前确认现场安全条件（LOTO）'],
       suggested_priority: 'P1',
       related_work_order_id: null,
+      created_work_order_id: null,
+      risk_level: 'CRITICAL',
+      analysis_status: 'WAITING_REVIEW',
+      review_status: null,
+      reviewed_by: null,
+      reviewed_at: null,
+      review_note: null,
+      agent_run_id: 12,
       requires_human_review: true,
       model_version: 'deterministic-rules-v1',
       is_mock: true,
@@ -114,6 +130,36 @@ describe('industrial alarm center page', () => {
     expect(screen.getByText(/bearing_overheat/)).toBeInTheDocument();
     expect(screen.getByText(/轴承过热处置手册/)).toBeInTheDocument();
     expect(screen.getByText(/Human Approval/)).toBeInTheDocument();
+    expect(screen.getByTestId('evidence-details')).toBeInTheDocument();
+  });
+
+  it('requires review before exposing the controlled work-order action', async () => {
+    const waitingAnalysis = {
+      id: 1, alarm_id: 9, correlation_group_id: 'abc123',
+      summary: '报警理解', root_cause_hypothesis: '证据约束根因假设',
+      contributing_factors: [], evidence: {}, citations: [], confidence: 0.6,
+      recommended_actions: ['现场复核'], suggested_priority: 'P2',
+      related_work_order_id: null, created_work_order_id: null,
+      risk_level: 'CRITICAL', analysis_status: 'WAITING_REVIEW', review_status: null,
+      reviewed_by: null, reviewed_at: null, review_note: null, agent_run_id: 12,
+      requires_human_review: true, model_version: 'deterministic-rules-v1',
+      is_mock: true, created_at: '2026-08-20T12:00:20Z',
+    };
+    mockAnalyzeAlarm.mockResolvedValue(waitingAnalysis);
+    mockReviewAlarm.mockResolvedValue({
+      ...waitingAnalysis, analysis_status: 'APPROVED', review_status: 'approve',
+      reviewed_by: 1, requires_human_review: false,
+    });
+    const user = userEvent.setup();
+    render(<AlarmsPage />);
+
+    await user.click(await screen.findByTestId('analyze-alarm-9'));
+    expect(screen.queryByTestId('create-alarm-work-order')).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: '批准分析' }));
+    expect(mockReviewAlarm).toHaveBeenCalledWith(9, 'approve');
+    await user.click(await screen.findByTestId('create-alarm-work-order'));
+    expect(mockCreateAlarmWorkOrder).toHaveBeenCalledWith(9);
+    expect(await screen.findByText('已创建工单 #77')).toBeInTheDocument();
   });
 
   it('runs correlation analysis across active alarms', async () => {
