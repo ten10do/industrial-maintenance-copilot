@@ -11,6 +11,7 @@ Revises: 20260811_01
 from typing import NoReturn
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "20260811_02"
@@ -64,9 +65,7 @@ def upgrade() -> None:
         op.create_index(
             "ix_gateway_connections_protocol", _CONNECTION_TABLE, ["protocol"]
         )
-        op.create_index(
-            "ix_gateway_connections_status", _CONNECTION_TABLE, ["status"]
-        )
+        op.create_index("ix_gateway_connections_status", _CONNECTION_TABLE, ["status"])
 
     if not _table_exists(bind, _MAPPING_TABLE):
         op.create_table(
@@ -104,9 +103,7 @@ def upgrade() -> None:
         op.create_index(
             "ix_opcua_node_mappings_metric_name", _MAPPING_TABLE, ["metric_name"]
         )
-    elif not _index_exists(
-        bind, _MAPPING_TABLE, "ix_opcua_node_mappings_node_id"
-    ):
+    elif not _index_exists(bind, _MAPPING_TABLE, "ix_opcua_node_mappings_node_id"):
         op.create_index(
             "ix_opcua_node_mappings_node_id", _MAPPING_TABLE, ["node_id"], unique=True
         )
