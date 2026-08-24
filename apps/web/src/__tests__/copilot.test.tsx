@@ -61,8 +61,8 @@ beforeEach(() => {
   mockUseAuth.mockReturnValue({
     user: { role: 'technician', id: 1, full_name: '工程师', email: 'tech@test.com', is_active: true },
   });
-  mockListEquipmentTypes.mockResolvedValue([{ id: 1, name: 'CNC机床' }]);
-  mockListFaultCodes.mockResolvedValue([{ code: 'E102', name: '传感器异常' }]);
+  mockListEquipmentTypes.mockImplementation(() => new Promise(() => {}));
+  mockListFaultCodes.mockImplementation(() => new Promise(() => {}));
   mockCopilotAsk.mockResolvedValue(mockResult);
 });
 

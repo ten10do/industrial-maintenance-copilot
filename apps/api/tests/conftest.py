@@ -1,4 +1,5 @@
 """Test fixtures for fault report conversion tests."""
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
@@ -11,15 +12,12 @@ from app.main import app
 from app.models.base import (
     EquipmentStatusEnum,
     FaultReportStatusEnum,
-    PriorityEnum,
     RoleEnum,
     UrgencyEnum,
-    WorkOrderStatusEnum,
 )
 from app.models.equipment import Equipment, EquipmentType, FaultCode
 from app.models.fault import FaultReport
 from app.models.user import User
-from app.models.workorder import WorkOrder
 
 # In-memory SQLite with StaticPool ensures all connections share the same :memory: database
 engine = create_engine(
@@ -157,7 +155,12 @@ def equipment(db, equipment_type):
 
 @pytest.fixture
 def fault_code(db, equipment_type):
-    fc = FaultCode(code="E101", name="Spindle Error", severity="high", equipment_type_id=equipment_type.id)
+    fc = FaultCode(
+        code="E101",
+        name="Spindle Error",
+        severity="high",
+        equipment_type_id=equipment_type.id,
+    )
     db.add(fc)
     db.commit()
     db.refresh(fc)

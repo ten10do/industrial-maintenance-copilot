@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard, AlertTriangle, Wrench, Cpu, BookOpen, Bot, Settings, Menu, X, LogOut,
-  Activity, BrainCircuit, ShieldCheck
+  Activity, BrainCircuit, ShieldCheck, RadioTower
 } from 'lucide-react';
 
 interface NavItem {
@@ -17,6 +17,7 @@ interface NavItem {
 const ALL_NAV_ITEMS: NavItem[] = [
   { label: '智能运维驾驶舱', href: '/dashboard', icon: <LayoutDashboard size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '实时状态监测', href: '/monitoring', icon: <Activity size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '工业网关', href: '/gateway', icon: <RadioTower size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '预测性维护', href: '/predictive-maintenance', icon: <BrainCircuit size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '设备资产中心', href: '/equipment', icon: <Cpu size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '故障上报', href: '/fault-reports', icon: <AlertTriangle size={18} />, roles: ['admin', 'supervisor', 'technician'] },

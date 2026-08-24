@@ -47,6 +47,8 @@ sequenceDiagram
 
 高风险命令没有绕过审批的公开执行 API。只有主管或管理员调用批准接口后，API 才会进入 Equipment Gateway。
 
+审批正常执行状态按 `pending → executing → approved | execution_failed` 流转；超时分支为 `executing → execution_unknown → approved | execution_failed | pending（新执行键）`。API 的数据库原子认领负责阻止批准与驳回竞争，并保证只有认领者可以下发命令；非认领者遇到 `executing` 时不会重发未知状态的高风险命令。Scheduler 标记超时，API 列表提供惰性兜底，主管或管理员完成人工核验。持久化 `execution_key` 负责标识单次命令尝试，Equipment Gateway 负责设备端的最终去重。
+
 ## 部署边界
 
 推荐生产结构为 Netlify Web、Render API/Worker/Scheduler、托管 PostgreSQL 与托管 Redis。API、数据库和 Web 必须协同发布；不得单独发布新版 Web 并继续连接旧 API。

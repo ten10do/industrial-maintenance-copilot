@@ -80,6 +80,12 @@ class ApprovalReview(BaseModel):
     note: str | None = None
 
 
+class ApprovalReconciliation(BaseModel):
+    outcome: Literal["confirmed_executed", "confirmed_not_executed", "confirmed_failed"]
+    note: str = Field(min_length=4, max_length=2000)
+    observed_device_state: str = Field(min_length=2, max_length=2000)
+
+
 class VerificationCreate(BaseModel):
     work_order_id: int
     notes: str | None = None

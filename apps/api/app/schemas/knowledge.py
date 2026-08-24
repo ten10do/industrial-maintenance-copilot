@@ -1,4 +1,5 @@
 """知识库与 Copilot schema。"""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -67,7 +68,9 @@ class DiagnoseResult(BaseModel):
     recommended_tools: list[str] = []
     recommended_parts: list[str] = []
     similar_cases: list[SimilarCase] = []
-    disclaimer: str = "AI 建议仅供辅助，维修人员应依据现场情况、设备手册和安全规范进行判断。"
+    disclaimer: str = (
+        "AI 建议仅供辅助，维修人员应依据现场情况、设备手册和安全规范进行判断。"
+    )
     is_mock: bool = True
 
 
@@ -107,6 +110,7 @@ class AskRequest(BaseModel):
 
 class Citation(BaseModel):
     """Copilot 回答中的结构化引用来源。"""
+
     source_type: str  # "knowledge_article" | "work_order" | "equipment"
     source_id: int
     title: str

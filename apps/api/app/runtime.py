@@ -14,7 +14,9 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
-from app.db.session import SessionLocal
+from app.db.alembic import database_is_at_head
+from app.db.session import SessionLocal, engine
+from app.services.approval_service import mark_timed_out_executions
 
 Role = Literal["worker", "scheduler"]
 logger = logging.getLogger("app.runtime")
@@ -34,6 +36,8 @@ def _heartbeat_key(role: Role) -> str:
 def _dependencies_ready(redis_client: Redis) -> None:
     with SessionLocal() as db:
         db.execute(text("SELECT 1"))
+    if not database_is_at_head(engine):
+        raise RuntimeError("database schema is not at Alembic head")
     redis_client.ping()
 
 
@@ -49,7 +53,14 @@ def run(role: Role) -> None:
                 datetime.now(UTC).isoformat(),
                 ex=max(interval * 4, 60),
             )
-        except (RedisError, SQLAlchemyError) as exc:
+            if role == "scheduler":
+                with SessionLocal() as db:
+                    marked = mark_timed_out_executions(db)
+                if marked:
+                    logger.warning(
+                        "%s high-risk command(s) require reconciliation", marked
+                    )
+        except (RedisError, RuntimeError, SQLAlchemyError) as exc:
             logger.error("%s dependency check failed: %s", role, exc)
         time.sleep(interval)
 

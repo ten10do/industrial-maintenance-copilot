@@ -1,4 +1,5 @@
 """通用 schema 与分页参数。"""
+
 from __future__ import annotations
 
 from typing import Generic, TypeVar

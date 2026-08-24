@@ -1,4 +1,5 @@
 """知识库接口。"""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query
@@ -26,7 +27,10 @@ def list_knowledge(
 ):
     q = db.query(KnowledgeArticle)
     if keyword:
-        q = q.filter(KnowledgeArticle.title.contains(keyword) | KnowledgeArticle.content.contains(keyword))
+        q = q.filter(
+            KnowledgeArticle.title.contains(keyword)
+            | KnowledgeArticle.content.contains(keyword)
+        )
     if category:
         q = q.filter(KnowledgeArticle.category == category)
     q = q.order_by(KnowledgeArticle.created_at.desc())
@@ -46,7 +50,9 @@ def search_knowledge(
 
 
 @router.get("/{k_id}", response_model=KnowledgeArticleOut)
-def get_knowledge(k_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+def get_knowledge(
+    k_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
+):
     art = db.get(KnowledgeArticle, k_id)
     if not art:
         raise not_found("知识条目不存在")
@@ -57,8 +63,14 @@ def get_knowledge(k_id: int, db: Session = Depends(get_db), _=Depends(get_curren
 
 
 @router.post("", response_model=KnowledgeArticleOut)
-def create_knowledge(payload: KnowledgeArticleCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
-    art = KnowledgeArticle(**payload.model_dump(), author_id=user.id, created_by=str(user.id))
+def create_knowledge(
+    payload: KnowledgeArticleCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
+    art = KnowledgeArticle(
+        **payload.model_dump(), author_id=user.id, created_by=str(user.id)
+    )
     db.add(art)
     db.commit()
     db.refresh(art)
@@ -66,7 +78,12 @@ def create_knowledge(payload: KnowledgeArticleCreate, db: Session = Depends(get_
 
 
 @router.put("/{k_id}", response_model=KnowledgeArticleOut)
-def update_knowledge(k_id: int, payload: KnowledgeArticleCreate, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def update_knowledge(
+    k_id: int,
+    payload: KnowledgeArticleCreate,
+    db: Session = Depends(get_db),
+    user=Depends(supervisor_or_admin),
+):
     art = db.get(KnowledgeArticle, k_id)
     if not art:
         raise not_found("知识条目不存在")
@@ -79,7 +96,9 @@ def update_knowledge(k_id: int, payload: KnowledgeArticleCreate, db: Session = D
 
 
 @router.delete("/{k_id}", response_model=OkResponse)
-def delete_knowledge(k_id: int, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)):
+def delete_knowledge(
+    k_id: int, db: Session = Depends(get_db), user=Depends(supervisor_or_admin)
+):
     art = db.get(KnowledgeArticle, k_id)
     if not art:
         raise not_found("知识条目不存在")

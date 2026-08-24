@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.models.base import (
     EquipmentStatusEnum,
@@ -11,27 +11,27 @@ from app.models.base import (
     MaintenanceLogTypeEnum,
     WorkOrderStatusEnum,
 )
+from app.models.equipment import Equipment
+from app.models.fault import FaultReport
+from app.models.knowledge import AcceptanceRecord, KnowledgeArticle
+from app.models.maintenance import (
+    LaborEntry,
+    MaintenanceLog,
+    WorkOrderReport,
+    WorkOrderSparePart,
+)
 from app.models.workorder import (
     WorkOrder,
     WorkOrderAssignment,
     WorkOrderChecklistItem,
     WorkOrderStatusHistory,
 )
-from app.models.maintenance import (
-    MaintenanceLog,
-    LaborEntry,
-    WorkOrderSparePart,
-    WorkOrderReport,
-)
-from app.models.knowledge import AcceptanceRecord, KnowledgeArticle
-from app.models.equipment import Equipment
-from app.models.fault import FaultReport
 from app.schemas.knowledge import MaintenanceReport, ReportSection
 
 
 def _make_wo(db, **kw):
     """Helper: create and flush a WorkOrder to DB."""
-    code = kw.pop("code", f"WO-TEST-{datetime.now(timezone.utc).microsecond}")
+    code = kw.pop("code", f"WO-TEST-{datetime.now(UTC).microsecond}")
     wo = WorkOrder(code=code, title="测试工单", created_by_id=1, **kw)
     db.add(wo)
     db.commit()
@@ -120,6 +120,33 @@ class TestWorkOrderAdministration:
 
 class TestWorkOrderStartRepair:
     """开始维修测试 — 需要先接受工单"""
+
+    @staticmethod
+    def _make_high_risk_work_order(db, equipment, technician, *, completed: bool):
+        wo = _make_wo(
+            db,
+            equipment_id=equipment.id,
+            status=WorkOrderStatusEnum.accepted,
+            assignee_id=technician.id,
+            safety_risk="高压电气设备，开始维修前必须执行 LOTO",
+        )
+        now = datetime.now(UTC)
+        for order, content in enumerate(["设备已停机", "已执行上锁挂牌（LOTO）"]):
+            db.add(
+                WorkOrderChecklistItem(
+                    work_order_id=wo.id,
+                    category="safety",
+                    content=content,
+                    order=order,
+                    is_required=True,
+                    is_completed=completed,
+                    completed_by=technician.id if completed else None,
+                    completed_at=now if completed else None,
+                )
+            )
+        db.commit()
+        db.refresh(wo)
+        return wo
 
     def test_start_repair_success(
         self, client, auth_technician, db, technician, equipment
@@ -210,6 +237,75 @@ class TestWorkOrderStartRepair:
         )
         assert len(history) >= 2  # assigned→accepted + accepted→in_progress
         assert any(h.to_status == "in_progress" for h in history)
+
+    def test_high_risk_start_rejects_missing_confirmation(
+        self, client, auth_technician, db, technician, equipment
+    ):
+        wo = self._make_high_risk_work_order(db, equipment, technician, completed=True)
+
+        res = client.post(f"/api/v1/work-orders/{wo.id}/start", headers=auth_technician)
+
+        assert res.status_code == 422
+        assert res.json()["detail"]["code"] == "HIGH_RISK_SAFETY_CONFIRMATION_REQUIRED"
+        db.refresh(wo)
+        assert wo.status == WorkOrderStatusEnum.accepted
+
+    def test_high_risk_start_rejects_incomplete_safety_checklist(
+        self, client, auth_technician, db, technician, equipment
+    ):
+        wo = self._make_high_risk_work_order(db, equipment, technician, completed=False)
+
+        res = client.post(
+            f"/api/v1/work-orders/{wo.id}/start",
+            json={"confirmed": True, "note": "已核对现场隔离和防护措施"},
+            headers=auth_technician,
+        )
+
+        assert res.status_code == 422
+        detail = res.json()["detail"]
+        assert detail["code"] == "HIGH_RISK_SAFETY_CHECKLIST_INCOMPLETE"
+        assert detail["missing_items"] == ["设备已停机", "已执行上锁挂牌（LOTO）"]
+
+    def test_high_risk_start_records_atomic_safety_confirmation(
+        self, client, auth_technician, db, technician, equipment
+    ):
+        wo = self._make_high_risk_work_order(db, equipment, technician, completed=True)
+        note = "已核对现场隔离、LOTO 和个人防护措施"
+
+        res = client.post(
+            f"/api/v1/work-orders/{wo.id}/start",
+            json={"confirmed": True, "note": note},
+            headers=auth_technician,
+        )
+
+        assert res.status_code == 200
+        assert res.json()["status"] == "in_progress"
+        history = (
+            db.query(WorkOrderStatusHistory)
+            .filter(
+                WorkOrderStatusHistory.work_order_id == wo.id,
+                WorkOrderStatusHistory.to_status
+                == WorkOrderStatusEnum.in_progress.value,
+            )
+            .one()
+        )
+        assert history.changed_by == technician.id
+        assert history.changed_at is not None
+        assert history.remark == f"高风险作业安全确认：{note}"
+
+    def test_high_risk_resume_requires_new_confirmation(
+        self, client, auth_technician, db, technician, equipment
+    ):
+        wo = self._make_high_risk_work_order(db, equipment, technician, completed=True)
+        wo.status = WorkOrderStatusEnum.paused
+        db.commit()
+
+        res = client.post(
+            f"/api/v1/work-orders/{wo.id}/resume", headers=auth_technician
+        )
+
+        assert res.status_code == 422
+        assert res.json()["detail"]["code"] == "HIGH_RISK_SAFETY_CONFIRMATION_REQUIRED"
 
 
 class TestChecklistItems:
@@ -653,7 +749,7 @@ class TestWorkOrderCompletion:
     def _make_ready_wo(self, client, db, equipment, technician):
         """创建准备就绪的工单（in_progress + 全部检查项完成 + 日志 + 工时）。"""
         wo = WorkOrder(
-            code=f"WO-SUB-{datetime.now(timezone.utc).microsecond}",
+            code=f"WO-SUB-{datetime.now(UTC).microsecond}",
             title="提交测试",
             equipment_id=equipment.id,
             status=WorkOrderStatusEnum.in_progress,
@@ -681,7 +777,7 @@ class TestWorkOrderCompletion:
                     order=i,
                     is_required=req,
                     is_completed=True,
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(UTC),
                 )
             )
         db.add(
@@ -690,7 +786,7 @@ class TestWorkOrderCompletion:
                 log_type=MaintenanceLogTypeEnum.repair,
                 content="更换轴承",
                 operator_id=technician.id,
-                logged_at=datetime.now(timezone.utc),
+                logged_at=datetime.now(UTC),
             )
         )
         db.add(LaborEntry(work_order_id=wo.id, hours=2.0, operator_id=technician.id))
@@ -1069,7 +1165,7 @@ class TestWorkOrderAcceptance:
     def _make_pending_wo(self, db, equipment, technician):
         """创建待验收工单。"""
         wo = WorkOrder(
-            code=f"WO-APP-{datetime.now(timezone.utc).microsecond}",
+            code=f"WO-APP-{datetime.now(UTC).microsecond}",
             title="验收测试",
             equipment_id=equipment.id,
             status=WorkOrderStatusEnum.pending_acceptance,
@@ -1138,7 +1234,7 @@ class TestWorkOrderAcceptance:
         """验收更新设备状态为运行中。"""
         wo = self._make_pending_wo(db, equipment, technician)
         # 设置设备为故障状态
-        eq = db.query(Equipment).get(equipment.id)
+        eq = db.get(Equipment, equipment.id)
         eq.status = EquipmentStatusEnum.fault
         db.commit()
 

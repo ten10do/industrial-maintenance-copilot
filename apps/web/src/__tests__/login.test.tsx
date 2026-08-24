@@ -2,6 +2,7 @@ import '@testing-library/jest-dom';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import LoginPage from '@/app/login/page';
+import LoginForm from '@/app/login/login-form';
 
 const mockPush = jest.fn();
 const mockLogin = jest.fn();
@@ -19,6 +20,14 @@ beforeEach(() => {
 });
 
 describe('LoginPage', () => {
+  it('生产构建不提供演示账号和密码默认值', () => {
+    render(<LoginForm demoLogin={null} />);
+
+    expect(screen.queryByText('演示账号快捷登录')).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText('请输入邮箱')).toHaveValue('');
+    expect(screen.getByPlaceholderText('请输入密码')).toHaveValue('');
+  });
+
   it('渲染登录表单和品牌标识', () => {
     render(<LoginPage />);
     expect(screen.getByText('设备运维工单 Copilot')).toBeInTheDocument();

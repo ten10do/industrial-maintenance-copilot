@@ -11,13 +11,13 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 API_ROOT = REPO_ROOT / "apps" / "api"
 sys.path.insert(0, str(API_ROOT))
 
-from sqlalchemy import inspect, text  # noqa: E402
-from sqlalchemy.orm import Session  # noqa: E402
+from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
 
-import app.models  # noqa: E402, F401
-from app.core.config import settings  # noqa: E402
-from app.db.session import Base, engine  # noqa: E402
-from app.seed import _seed  # noqa: E402
+import app.models  # noqa: F401
+from app.core.config import settings
+from app.db.session import Base, engine
+from app.seed import _seed
 
 
 def reset_demo_data() -> None:

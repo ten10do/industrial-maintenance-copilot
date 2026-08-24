@@ -25,3 +25,4 @@ scikit-learn==1.6.1
 joblib==1.4.2
 PyYAML==6.0.2
 types-PyYAML==6.0.12.20250516
+asyncua==2.0.1

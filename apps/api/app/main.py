@@ -14,7 +14,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.v1.router import api_router
 from app.core.config import settings
-from app.db.migrations import schema_is_ready, upgrade_schema
+from app.db.alembic import database_is_at_head, ensure_database_at_head
+from app.db.migrations import schema_is_ready
 from app.db.session import SessionLocal, engine
 
 logger = logging.getLogger("app")
@@ -23,13 +24,30 @@ logging.basicConfig(level=logging.INFO)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 兼容迁移同时负责新数据库建表。
-    upgrade_schema(engine)
+    ensure_database_at_head(
+        engine,
+        auto_migrate=settings.auto_migrate_on_startup,
+    )
     if settings.SEED_ON_STARTUP:
         from app.seed import run_seed_if_empty
 
         run_seed_if_empty()
-    yield
+
+    # 工业协议网关（OPC UA，只读）：默认关闭，开启后随 API 进程轮询。
+    gateway_runtime = None
+    if settings.GATEWAY_ENABLED:
+        from app.industrial_gateway.opcua.service import get_gateway_runtime
+
+        gateway_runtime = get_gateway_runtime()
+        gateway_runtime.start()
+        logger.info("Industrial gateway started (mode=%s)", settings.GATEWAY_MODE)
+    try:
+        yield
+    finally:
+        if gateway_runtime is not None:
+            gateway_runtime.stop()
+            await gateway_runtime.wait_stopped()
+            logger.info("Industrial gateway stopped")
 
 
 app = FastAPI(
@@ -76,7 +94,7 @@ def ready(response: Response):
     try:
         with SessionLocal() as db:
             db.execute(text("SELECT 1"))
-        ready_status = schema_is_ready(engine)
+        ready_status = schema_is_ready(engine) and database_is_at_head(engine)
         if settings.REDIS_URL:
             Redis.from_url(settings.REDIS_URL).ping()
             redis_status = "ok"

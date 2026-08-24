@@ -52,6 +52,7 @@ describe('EquipmentList', () => {
 
   it('加载中展示加载状态', () => {
     mockListEquipment.mockReturnValue(new Promise(() => {}));
+    mockListEquipmentTypes.mockReturnValue(new Promise(() => {}));
     render(<EquipmentList />);
     expect(screen.getByText('加载中...')).toBeInTheDocument();
   });
@@ -148,7 +149,7 @@ describe('EquipmentList', () => {
   it('加载设备类型列表', async () => {
     render(<EquipmentList />);
     await waitFor(() => {
-      expect(mockListEquipmentTypes).toHaveBeenCalled();
+      expect(screen.getByRole('option', { name: 'CNC' })).toBeInTheDocument();
     });
   });
 });

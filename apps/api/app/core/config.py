@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_SECRET_KEY = "change-this-to-a-random-secret-key-in-production"
+MIN_SECRET_KEY_LENGTH = 32
 
 
 class Settings(BaseSettings):
@@ -19,9 +23,10 @@ class Settings(BaseSettings):
     # 数据库：留空默认 SQLite，保证本机可零配置启动
     DATABASE_URL: str = ""
     REDIS_URL: str = ""
+    AUTO_MIGRATE_ON_STARTUP: bool | None = None
 
     # 认证
-    SECRET_KEY: str = "change-this-to-a-random-secret-key-in-production"
+    SECRET_KEY: str = DEFAULT_SECRET_KEY
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
     # AI
@@ -31,6 +36,18 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "gpt-4o-mini"
     EMBEDDING_MODEL: str = "text-embedding-3-small"
     AI_REQUEST_TIMEOUT_SECONDS: int = 30
+
+    # 高风险命令超过此时间仍无结果时，转为人工核验。
+    EQUIPMENT_COMMAND_TIMEOUT_SECONDS: int = Field(default=300, ge=30, le=3600)
+
+    # 工业协议网关（OPC UA，只读遥测接入）。默认关闭，不影响既有 Mock 链路。
+    GATEWAY_ENABLED: bool = False
+    GATEWAY_MODE: str = "mock"  # mock：进程内模拟客户端；opcua：真实 OPC UA 连接
+    GATEWAY_ENDPOINT: str = ""  # 留空使用各模式默认端点
+    GATEWAY_POLL_INTERVAL_SECONDS: float = Field(default=5.0, ge=1.0)
+    GATEWAY_AUTO_INGEST: bool = True
+    GATEWAY_MAPPING_CONFIG: str = "configs/opcua-node-mapping.yaml"
+    GATEWAY_TIMEOUT_SECONDS: float = Field(default=4.0, ge=1.0)
 
     # 存储
     STORAGE_TYPE: str = "local"
@@ -43,6 +60,26 @@ class Settings(BaseSettings):
 
     # 演示数据
     SEED_ON_STARTUP: bool = True
+
+    @property
+    def is_development(self) -> bool:
+        return self.APP_ENV.strip().lower() == "development"
+
+    @model_validator(mode="after")
+    def reject_unsafe_non_development_config(self) -> Settings:
+        if self.is_development:
+            return self
+
+        secret_key = self.SECRET_KEY.strip()
+        if secret_key == DEFAULT_SECRET_KEY or len(secret_key) < MIN_SECRET_KEY_LENGTH:
+            raise ValueError(
+                f"非开发环境必须配置至少 {MIN_SECRET_KEY_LENGTH} 个字符的随机 SECRET_KEY"
+            )
+        if self.SEED_ON_STARTUP:
+            raise ValueError("非开发环境禁止启用 SEED_ON_STARTUP")
+        if self.AUTO_MIGRATE_ON_STARTUP:
+            raise ValueError("非开发环境禁止在应用启动时自动执行数据库迁移")
+        return self
 
     @property
     def effective_database_url(self) -> str:
@@ -60,10 +97,16 @@ class Settings(BaseSettings):
         return "sqlite:///./maintenance.db"
 
     @property
+    def auto_migrate_on_startup(self) -> bool:
+        if self.AUTO_MIGRATE_ON_STARTUP is not None:
+            return self.AUTO_MIGRATE_ON_STARTUP
+        return self.is_development
+
+    @property
     def cors_origins(self) -> list[str]:
         origins = [self.FRONTEND_URL]
         # 开发环境额外放行常见本地端口
-        if self.APP_ENV == "development":
+        if self.is_development:
             origins.extend(
                 [
                     "http://localhost:3000",

@@ -1,14 +1,16 @@
 """用户与维修工程师接口。"""
+
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends
+from sqlalchemy import func
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.core.deps import admin_only, get_current_user, supervisor_or_admin
 from app.core.exceptions import paginate
 from app.db.session import get_db
 from app.models.base import RoleEnum, WorkOrderStatusEnum
-from app.models.user import Skill, TechnicianProfile, User
+from app.models.user import TechnicianProfile, User
 from app.models.workorder import WorkOrder
 from app.schemas.common import PageOut
 from app.schemas.user import TechnicianOut, UserCreate, UserOut
@@ -23,7 +25,7 @@ def list_users(
     page: int = 1,
     page_size: int = 50,
     db: Session = Depends(get_db),
-    _=Depends(get_current_user),
+    _=Depends(supervisor_or_admin),
 ):
     q = db.query(User)
     if role:
@@ -31,11 +33,18 @@ def list_users(
     if keyword:
         q = q.filter(User.full_name.contains(keyword) | User.email.contains(keyword))
     items, total = paginate(q, page, page_size)
-    return PageOut(items=[UserOut.model_validate(u) for u in items], total=total, page=page, page_size=page_size)
+    return PageOut(
+        items=[UserOut.model_validate(u) for u in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("", response_model=UserOut)
-def create_user(payload: UserCreate, db: Session = Depends(get_db), user=Depends(admin_only)):
+def create_user(
+    payload: UserCreate, db: Session = Depends(get_db), user=Depends(admin_only)
+):
     from app.core.security import hash_password
 
     if db.query(User).filter(User.email == payload.email).first():
@@ -59,15 +68,38 @@ def create_user(payload: UserCreate, db: Session = Depends(get_db), user=Depends
 
 @router.get("/technicians", response_model=list[TechnicianOut])
 def list_technicians(db: Session = Depends(get_db), _=Depends(get_current_user)):
-    profiles = db.query(TechnicianProfile).all()
+    profiles = (
+        db.query(TechnicianProfile)
+        .options(
+            joinedload(TechnicianProfile.user),
+            selectinload(TechnicianProfile.skills),
+        )
+        .all()
+    )
+    user_ids = [profile.user_id for profile in profiles]
+    active_counts: dict[int, int] = {}
+    if user_ids:
+        active_counts = {
+            user_id: count
+            for user_id, count in (
+                db.query(WorkOrder.assignee_id, func.count(WorkOrder.id))
+                .filter(
+                    WorkOrder.assignee_id.in_(user_ids),
+                    WorkOrder.status.in_(
+                        [
+                            WorkOrderStatusEnum.assigned,
+                            WorkOrderStatusEnum.accepted,
+                            WorkOrderStatusEnum.in_progress,
+                        ]
+                    ),
+                )
+                .group_by(WorkOrder.assignee_id)
+                .all()
+            )
+            if user_id is not None
+        }
     result: list[TechnicianOut] = []
     for p in profiles:
-        active = (
-            db.query(WorkOrder)
-            .filter(WorkOrder.assignee_id == p.user_id)
-            .filter(WorkOrder.status.in_([WorkOrderStatusEnum.assigned, WorkOrderStatusEnum.accepted, WorkOrderStatusEnum.in_progress]))
-            .count()
-        )
         today_done = 0  # 简化：完成数
         result.append(
             TechnicianOut(
@@ -79,7 +111,7 @@ def list_technicians(db: Session = Depends(get_db), _=Depends(get_current_user))
                 full_name=p.user.full_name,
                 email=p.user.email,
                 skills=[SkillOut.model_validate(s) for s in p.skills],
-                active_work_orders=active,
+                active_work_orders=active_counts.get(p.user_id, 0),
                 completed_today=today_done,
             )
         )

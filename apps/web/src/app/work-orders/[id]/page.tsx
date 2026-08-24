@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
@@ -36,21 +36,34 @@ export default function WorkOrderDetail() {
   const [rejectReason, setRejectReason] = useState('');
   // 完工校验错误
   const [validationError, setValidationError] = useState<CompletionValidationError | null>(null);
+  // 高风险作业安全确认（与开始/继续操作原子提交）
+  const [safetyAction, setSafetyAction] = useState<'start' | 'resume' | null>(null);
+  const [safetyConfirmed, setSafetyConfirmed] = useState(false);
+  const [safetyNote, setSafetyNote] = useState('');
   // 上传中
   const [uploading, setUploading] = useState(false);
 
+  // 请求序号守卫：本页存在多个并发刷新入口（接受/开始、清单勾选、记录添加等），
+  // 慢环境下较早发出的 GET 可能较晚返回；若无守卫，过期响应会把
+  // 已落库的最新状态（如已勾选的安全项）回滚覆盖成旧值。
+  const fetchSeqRef = useRef(0);
   const fetch = useCallback(async () => {
-    try { const d = await getWorkOrder(Number(id)); setWo(d); } catch (e: any) { toast.error(e.message); } finally { setLoading(false); }
+    const seq = ++fetchSeqRef.current;
+    try {
+      const d = await getWorkOrder(Number(id));
+      if (seq === fetchSeqRef.current) setWo(d);
+    } catch (e: any) { toast.error(e.message); } finally {
+      if (seq === fetchSeqRef.current) setLoading(false);
+    }
   }, [id]);
 
   useEffect(() => { fetch(); }, [fetch]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setValidationError(null); }, [wo?.status]);
 
   const handleAction = async (action: string, data?: any) => {
     try {
-      const actions: any = { accept: acceptWorkOrder, start: startWorkOrder, pause: pauseWorkOrder, resume: resumeWorkOrder, cancel: cancelWorkOrder };
+      const actions: any = { accept: acceptWorkOrder, pause: pauseWorkOrder, cancel: cancelWorkOrder };
       if (action === 'submit') {
         setValidationError(null);
         const result = await submitWorkOrder(Number(id), data || submitForm);
@@ -60,7 +73,14 @@ export default function WorkOrderDetail() {
         if (!rejectReason || !rejectReason.trim()) { toast.error('请填写退回原因'); return; }
         await rejectWorkOrder(Number(id), rejectReason);
         setRejectReason('');
-      } else if (actions[action]) await actions[action](Number(id));
+      } else if (action === 'start') await startWorkOrder(Number(id), data);
+      else if (action === 'resume') await resumeWorkOrder(Number(id), data);
+      else if (actions[action]) await actions[action](Number(id));
+      if (action === 'start' || action === 'resume') {
+        setSafetyAction(null);
+        setSafetyConfirmed(false);
+        setSafetyNote('');
+      }
       toast.success('操作成功');
       fetch();
     } catch (e: any) {
@@ -149,6 +169,21 @@ export default function WorkOrderDetail() {
     handleAction('submit', submitForm);
   };
 
+  const requestExecution = (action: 'start' | 'resume') => {
+    if (!wo.requires_safety_confirmation) {
+      handleAction(action);
+      return;
+    }
+    setSafetyAction(action);
+    setSafetyConfirmed(false);
+    setSafetyNote('');
+  };
+
+  const confirmHighRiskExecution = () => {
+    if (!safetyAction) return;
+    handleAction(safetyAction, { confirmed: safetyConfirmed, note: safetyNote.trim() });
+  };
+
   const getStatusClass = (s: string) => {
     const m: any = { pending_dispatch: 'text-gray-400', assigned: 'text-blue-400', accepted: 'text-purple-400', in_progress: 'text-yellow-400', pending_acceptance: 'text-green-400', completed: 'text-green-500', returned: 'text-red-400', paused: 'text-gray-400' };
     return m[s] || '';
@@ -164,6 +199,8 @@ export default function WorkOrderDetail() {
   const canSubmit = isAssignee && wo.status === 'in_progress';
   const canApprove = isSupervisor && wo.status === 'pending_acceptance';
   const isReadonly = wo.status === 'completed' || wo.status === 'cancelled';
+  const requiredSafetyItems = (wo.checklist_items || []).filter((item: any) => item.category === 'safety' && item.is_required);
+  const safetyChecklistComplete = requiredSafetyItems.length > 0 && requiredSafetyItems.every((item: any) => item.is_completed);
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-12">
@@ -183,13 +220,55 @@ export default function WorkOrderDetail() {
       {!isReadonly && (canEdit || canSubmit || canApprove || (isSupervisor && ['pending_dispatch', 'assigned'].includes(wo.status)) || (isAssignee && wo.status === 'assigned')) && (
         <div className="card flex flex-wrap gap-2" data-testid="action-buttons">
           {isAssignee && wo.status === 'assigned' && <button onClick={() => handleAction('accept')} className="btn btn-primary" data-testid="accept-work-order-button"><Play size={16} /> 接受工单</button>}
-          {isAssignee && wo.status === 'accepted' && <button onClick={() => handleAction('start')} className="btn btn-success"><Play size={16} /> 开始维修</button>}
+          {isAssignee && wo.status === 'accepted' && <button onClick={() => requestExecution('start')} className="btn btn-success"><Play size={16} /> 开始维修</button>}
           {isAssignee && wo.status === 'in_progress' && <button onClick={() => handleAction('pause')} className="btn btn-outline"><Pause size={16} /> 暂停</button>}
-          {isAssignee && wo.status === 'paused' && <button onClick={() => handleAction('resume')} className="btn btn-success"><Play size={16} /> 继续</button>}
-          {isAssignee && wo.status === 'returned' && <button onClick={() => handleAction('start')} className="btn btn-primary"><RefreshCw size={16} /> 重新处理</button>}
+          {isAssignee && wo.status === 'paused' && <button onClick={() => requestExecution('resume')} className="btn btn-success"><Play size={16} /> 继续</button>}
+          {isAssignee && wo.status === 'returned' && <button onClick={() => requestExecution('start')} className="btn btn-primary"><RefreshCw size={16} /> 重新处理</button>}
           {canSubmit && <button onClick={doSubmit} className="btn btn-primary"><Send size={16} /> 提交完工</button>}
           {canApprove && <><button onClick={() => handleAction('approve')} className="btn btn-success"><CheckCircle size={16} /> 验收通过</button></>}
           {isSupervisor && ['pending_dispatch', 'assigned'].includes(wo.status) && <button onClick={() => handleAction('cancel')} className="btn btn-outline"><XCircle size={16} /> 取消工单</button>}
+        </div>
+      )}
+
+      {safetyAction && (
+        <div className="card border-red-500/40 bg-red-500/10 space-y-3" data-testid="high-risk-safety-confirmation">
+          <div className="flex items-start gap-2">
+            <Shield size={18} className="text-red-400 mt-0.5 flex-shrink-0" />
+            <div>
+              <h2 className="font-semibold text-red-300">高风险作业安全确认</h2>
+              <p className="text-xs text-red-200 mt-1">必须先完成全部必做安全检查项；本次确认将与开始操作一同记录，暂停后继续需重新确认。</p>
+            </div>
+          </div>
+          {!safetyChecklistComplete && (
+            <p className="text-sm text-yellow-300">请先完成维修检查清单中的全部必做安全项。</p>
+          )}
+          <label className="flex items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={safetyConfirmed}
+              onChange={e => setSafetyConfirmed(e.target.checked)}
+              className="mt-1"
+            />
+            <span>我已现场核对停机、能源隔离、LOTO、残余能量和个人防护措施</span>
+          </label>
+          <textarea
+            value={safetyNote}
+            onChange={e => setSafetyNote(e.target.value)}
+            rows={2}
+            maxLength={500}
+            className="w-full text-sm"
+            placeholder="填写现场安全确认说明（至少 8 个字符）"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={confirmHighRiskExecution}
+              disabled={!safetyChecklistComplete || !safetyConfirmed || safetyNote.trim().length < 8}
+              className="btn btn-danger"
+            >
+              确认安全措施并{wo.status === 'paused' ? '继续维修' : '开始维修'}
+            </button>
+            <button onClick={() => setSafetyAction(null)} className="btn btn-outline">取消</button>
+          </div>
         </div>
       )}
 

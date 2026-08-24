@@ -7,13 +7,12 @@ import io
 import qrcode
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.deps import get_current_user, supervisor_or_admin
 from app.core.exceptions import conflict, not_found, paginate
 from app.db.session import get_db
 from app.models.equipment import Equipment, EquipmentType, FaultCode, SparePart
-from app.models.user import User
 from app.schemas.common import PageOut
 from app.schemas.equipment import (
     EquipmentCreate,
@@ -30,22 +29,14 @@ from app.schemas.equipment import (
 router = APIRouter(prefix="/equipment", tags=["equipment"])
 
 
-def _to_out(db: Session, eq: Equipment) -> EquipmentOut:
-    type_name = None
-    if eq.equipment_type_id:
-        t = db.get(EquipmentType, eq.equipment_type_id)
-        type_name = t.name if t else None
-    resp_name = None
-    if eq.responsible_person_id:
-        u = db.get(User, eq.responsible_person_id)
-        resp_name = u.full_name if u else None
+def _to_out(eq: Equipment) -> EquipmentOut:
     return EquipmentOut(
         id=eq.id,
         asset_uuid=eq.asset_uuid,
         code=eq.code,
         name=eq.name,
         equipment_type_id=eq.equipment_type_id,
-        equipment_type_name=type_name,
+        equipment_type_name=eq.equipment_type.name if eq.equipment_type else None,
         plant=eq.plant,
         production_line=eq.production_line,
         location=eq.location,
@@ -59,7 +50,9 @@ def _to_out(db: Session, eq: Equipment) -> EquipmentOut:
         rated_parameters=eq.rated_parameters,
         cumulative_runtime_hours=eq.cumulative_runtime_hours,
         responsible_person_id=eq.responsible_person_id,
-        responsible_person_name=resp_name,
+        responsible_person_name=(
+            eq.responsible_person.full_name if eq.responsible_person else None
+        ),
         last_maintenance_at=eq.last_maintenance_at,
         next_maintenance_at=eq.next_maintenance_at,
         qr_token=eq.qr_token,
@@ -79,7 +72,10 @@ def list_equipment(
     db: Session = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    q = db.query(Equipment)
+    q = db.query(Equipment).options(
+        joinedload(Equipment.equipment_type),
+        joinedload(Equipment.responsible_person),
+    )
     if keyword:
         q = q.filter(
             Equipment.name.contains(keyword) | Equipment.code.contains(keyword)
@@ -92,7 +88,7 @@ def list_equipment(
         q = q.filter(Equipment.plant == plant)
     items, total = paginate(q, page, page_size)
     return PageOut(
-        items=[_to_out(db, e) for e in items],
+        items=[_to_out(e) for e in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -117,7 +113,7 @@ def create_equipment(
     db.add(eq)
     db.commit()
     db.refresh(eq)
-    return _to_out(db, eq)
+    return _to_out(eq)
 
 
 @router.get("/{eq_id}", response_model=EquipmentOut)
@@ -127,7 +123,7 @@ def get_equipment(
     eq = db.get(Equipment, eq_id)
     if not eq:
         raise not_found("设备不存在")
-    return _to_out(db, eq)
+    return _to_out(eq)
 
 
 @router.put("/{eq_id}", response_model=EquipmentOut)
@@ -145,7 +141,7 @@ def update_equipment(
     eq.updated_by = str(user.id)
     db.commit()
     db.refresh(eq)
-    return _to_out(db, eq)
+    return _to_out(eq)
 
 
 @router.get("/{eq_id}/work-orders")
@@ -180,11 +176,13 @@ def by_qr(qr_token: str, db: Session = Depends(get_db), _=Depends(get_current_us
     eq = db.query(Equipment).filter(Equipment.qr_token == qr_token).first()
     if not eq:
         raise not_found("二维码对应的设备不存在")
-    return _to_out(db, eq)
+    return _to_out(eq)
 
 
 @router.get("/{eq_id}/qrcode")
-def equipment_qrcode(eq_id: int, db: Session = Depends(get_db)):
+def equipment_qrcode(
+    eq_id: int, db: Session = Depends(get_db), _=Depends(get_current_user)
+):
     eq = db.get(Equipment, eq_id)
     if not eq:
         raise not_found("设备不存在")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any
+from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
@@ -222,6 +223,9 @@ class OperationApproval(TimestampMixin, Base):
     )
     command_type: Mapped[str] = mapped_column(String(64))
     command_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    execution_key: Mapped[str | None] = mapped_column(
+        String(64), unique=True, index=True, default=lambda: uuid4().hex
+    )
     risk_level: Mapped[RiskLevelEnum] = mapped_column(
         Enum(RiskLevelEnum), default=RiskLevelEnum.high, index=True
     )
@@ -238,8 +242,42 @@ class OperationApproval(TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    execution_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    execution_attempt: Mapped[int] = mapped_column(Integer, default=0)
     command_executed: Mapped[bool] = mapped_column(Boolean, default=False)
     command_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    reconciliation_outcome: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )
+    reconciliation_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_device_state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reconciled_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    reconciled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class OperationExecutionAudit(Base):
+    __tablename__ = "operation_execution_audits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    approval_id: Mapped[int] = mapped_column(
+        ForeignKey("operation_approvals.id", ondelete="CASCADE"), index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(48), index=True)
+    execution_key: Mapped[str] = mapped_column(String(64), index=True)
+    execution_attempt: Mapped[int] = mapped_column(Integer)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observed_device_state: Mapped[str | None] = mapped_column(Text, nullable=True)
+    details: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
 
 class MaintenanceVerification(TimestampMixin, Base):

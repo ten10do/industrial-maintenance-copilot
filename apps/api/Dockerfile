@@ -15,13 +15,16 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY app/ ./app/
+COPY alembic.ini ./alembic.ini
+COPY alembic/ ./alembic/
+COPY configs/ ./configs/
 
 # Environment
 ENV PYTHONPATH=/app
 ENV APP_ENV=production
 ENV API_HOST=0.0.0.0
 ENV API_PORT=8000
-ENV SEED_ON_STARTUP=true
+ENV SEED_ON_STARTUP=false
 
 EXPOSE 8000
 

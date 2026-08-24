@@ -133,7 +133,10 @@ async function completeAllChecklistItems(page: any) {
     );
     const isChecked = await checkbox.isChecked();
 
-    if (!isChecked && !(await checkbox.isDisabled())) {
+    if (!isChecked) {
+      // 同 completeSafetyChecklistItems：等待异步状态刷新使复选框可用，
+      // 而不是在禁用态下静默跳过（会把失败推迟到提交校验步骤）。
+      await expect(checkbox).toBeEnabled({ timeout: 15000 });
       const updateResponse = page.waitForResponse(
         (response: any) =>
           response.request().method() === 'PUT'
@@ -141,10 +144,59 @@ async function completeAllChecklistItems(page: any) {
       );
       await checkbox.check({ force: true });
       expect((await updateResponse).ok()).toBeTruthy();
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      // 等待 SafetyChecklist 全局 loadingId 清空（animate-pulse 标记消失），
+      // 确保下一次勾选不被组件的单飞守卫静默忽略。
+      await expect(
+        page.locator('[data-testid="safety-checklist"] span.animate-pulse')
+      ).toHaveCount(0, { timeout: 15000 });
       await expect(checkbox).toBeChecked({ timeout: 5000 });
     }
   }
+}
+
+async function completeSafetyChecklistItems(page: any) {
+  const group = page.locator('[data-testid="checklist-group-safety"]');
+  await expect(group).toBeVisible({ timeout: 10000 });
+  const checkboxes = group.locator('input[type="checkbox"]');
+  const count = await checkboxes.count();
+
+  for (let index = 0; index < count; index += 1) {
+    const checkbox = checkboxes.nth(index);
+    if (!(await checkbox.isChecked())) {
+      // 接受工单后的状态刷新（accept POST → refetch → 重渲染）是异步的：
+      // 在 wo.status 变为 accepted 前清单复选框处于禁用态。
+      // 显式等待可用状态，避免依赖 networkidle 的时序运气
+      // （全量 suite 下前序用例拖慢响应时该竞态会必现）。
+      await expect(checkbox).toBeEnabled({ timeout: 15000 });
+      const updateResponse = page.waitForResponse(
+        (response: any) => response.request().method() === 'PUT' && response.url().includes('/checklist/'),
+      );
+      await checkbox.check({ force: true });
+      expect((await updateResponse).ok()).toBeTruthy();
+      // SafetyChecklist 以全局 loadingId 单飞串行处理勾选：上一个勾选的
+      // PUT→refetch 未落地前，下一次 onChange 会被组件静默忽略。
+      // 加载中的项会渲染 span.animate-pulse 标记；等待其清零即组件回到空闲，
+      // 下一次勾选必然被受理（确定性信号，替代对响应速度的侥幸依赖）。
+      await expect(
+        page.locator('[data-testid="checklist-group-safety"] span.animate-pulse')
+      ).toHaveCount(0, { timeout: 15000 });
+      await expect(checkbox).toBeChecked({ timeout: 5000 });
+    }
+  }
+}
+
+async function confirmHighRiskExecution(
+  page: any,
+  triggerText = '开始维修',
+  confirmationText = '确认安全措施并开始维修',
+) {
+  await page.locator(`button:has-text("${triggerText}")`).click({ force: true });
+  const panel = page.locator('[data-testid="high-risk-safety-confirmation"]');
+  await expect(panel).toBeVisible({ timeout: 5000 });
+  await panel.locator('input[type="checkbox"]').check();
+  await panel.locator('textarea').fill('已现场核对停机、能源隔离、LOTO 和个人防护措施');
+  await panel.getByRole('button', { name: confirmationText }).click();
+  await page.waitForLoadState('networkidle', { timeout: 10000 });
 }
 
 /**
@@ -204,11 +256,9 @@ test.describe('工单完整生命周期', () => {
     // Verify status changed to "已接受"
     await expect(page.getByText('已接受', { exact: true })).toBeVisible({ timeout: 10000 });
 
-    // Click "开始维修"
-    const startBtn = page.locator('button:has-text("开始维修")');
-    await expect(startBtn).toBeVisible({ timeout: 5000 });
-    await startBtn.click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    // 完成安全检查，并将现场确认与“开始维修”原子提交
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     // Verify status changed to "处理中"
     await expect(page.getByText('处理中', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -289,8 +339,8 @@ test.describe('完工条件不足验证', () => {
     await page.waitForLoadState('networkidle', { timeout: 10000 });
 
     // Start
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     await expect(page.getByText('处理中', { exact: true })).toBeVisible({ timeout: 10000 });
 
@@ -314,8 +364,8 @@ test.describe('完工条件不足验证', () => {
 
     await page.locator('[data-testid="accept-work-order-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     // Fill submit form (to pass frontend validation)
     await fillSubmitForm(page);
@@ -356,8 +406,8 @@ test.describe('验收驳回到重新处理流程', () => {
     // Accept → Start
     await page.locator('[data-testid="accept-work-order-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     // Complete checklist, add logs/labor
     await completeAllChecklistItems(page);
@@ -410,8 +460,7 @@ test.describe('验收驳回到重新处理流程', () => {
     // Verify "重新处理" button is visible
     const redoBtn = page.locator('button:has-text("重新处理")');
     await expect(redoBtn).toBeVisible({ timeout: 5000 });
-    await redoBtn.click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await confirmHighRiskExecution(page, '重新处理');
 
     // Verify back to "处理中"
     await expect(page.getByText('处理中', { exact: true })).toBeVisible({ timeout: 10000 });
@@ -512,8 +561,8 @@ test.describe('权限隔离验证', () => {
 
     await page.locator('[data-testid="accept-work-order-button"]').click({ force: true });
     await page.waitForLoadState('networkidle', { timeout: 10000 });
-    await page.locator('button:has-text("开始维修")').click({ force: true });
-    await page.waitForLoadState('networkidle', { timeout: 10000 });
+    await completeSafetyChecklistItems(page);
+    await confirmHighRiskExecution(page);
 
     await completeAllChecklistItems(page);
     await addMaintenanceRecords(page);

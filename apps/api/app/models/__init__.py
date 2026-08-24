@@ -1,5 +1,6 @@
 """集中导入所有模型，便于 Alembic 与 create_all 发现表结构。"""
 
+from app.industrial_gateway.models import GatewayConnection, OpcUaNodeMapping
 from app.models.base import (
     AIInteractionTypeEnum,
     AIStatusEnum,
@@ -24,6 +25,7 @@ from app.models.intelligence import (
     MaintenanceRecommendation,
     MaintenanceVerification,
     OperationApproval,
+    OperationExecutionAudit,
     RiskPrediction,
     SparePartReservation,
     TelemetryRecord,
@@ -76,6 +78,7 @@ __all__ = [
     "FaultDiagnosis",
     "FaultReport",
     "FaultReportStatusEnum",
+    "GatewayConnection",
     "KnowledgeArticle",
     "KnowledgeCategoryEnum",
     "KnowledgeChunk",
@@ -88,7 +91,9 @@ __all__ = [
     "ModelMetric",
     "ModelVersion",
     "Notification",
+    "OpcUaNodeMapping",
     "OperationApproval",
+    "OperationExecutionAudit",
     "PredictionRecord",
     "PriorityEnum",
     "RiskLevelEnum",

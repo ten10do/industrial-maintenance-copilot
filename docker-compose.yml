@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -29,10 +27,11 @@ services:
       context: ./apps/api
       dockerfile: Dockerfile
     container_name: imc-api
+    command: ["sh", "-c", "python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports:
       - "8000:8000"
     environment:
-      - APP_ENV=production
+      - APP_ENV=${APP_ENV:-development}
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - FRONTEND_URL=http://localhost:3000
@@ -43,7 +42,12 @@ services:
       - AI_ENABLED=false
       - STORAGE_TYPE=local
       - STORAGE_LOCAL_DIR=./uploads
-      - SEED_ON_STARTUP=true
+      - SEED_ON_STARTUP=${SEED_ON_STARTUP:-true}
+      - AUTO_MIGRATE_ON_STARTUP=false
+      # 工业协议网关（OPC UA，只读）。默认关闭；启用方法见 docs/opcua-gateway.md
+      - GATEWAY_ENABLED=${GATEWAY_ENABLED:-false}
+      - GATEWAY_MODE=opcua
+      - GATEWAY_ENDPOINT=opc.tcp://opcua-simulator:4840/industrial-simulator/
     depends_on:
       postgres:
         condition: service_healthy
@@ -64,7 +68,7 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.runtime", "worker"]
     environment:
-      - APP_ENV=production
+      - APP_ENV=${APP_ENV:-development}
       - DATABASE_URL=postgresql+psycopg://maintenance:maintenance-local-only@postgres:5432/maintenance
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key-in-production}
@@ -88,7 +92,7 @@ services:
       dockerfile: Dockerfile
     command: ["python", "-m", "app.runtime", "scheduler"]
     environment:
-      - APP_ENV=production
+      - APP_ENV=${APP_ENV:-development}
       - DATABASE_URL=postgresql+psycopg://maintenance:maintenance-local-only@postgres:5432/maintenance
       - REDIS_URL=redis://redis:6379/0
       - SECRET_KEY=${SECRET_KEY:-change-this-to-a-random-secret-key-in-production}
@@ -101,6 +105,22 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-m", "app.runtime", "scheduler", "--check"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+  # 软件 OPC UA 设备模拟器（Industrial Motor）。
+  # 仅在 gateway profile 下启动：docker compose --profile gateway up -d
+  opcua-simulator:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    command:
+      ["python", "-m", "app.industrial_gateway.simulator.opcua_server", "--host", "0.0.0.0", "--port", "4840"]
+    profiles: ["gateway"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1', 4840), 3).close()"]
       interval: 10s
       timeout: 5s
       retries: 6

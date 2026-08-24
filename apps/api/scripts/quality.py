@@ -6,42 +6,7 @@ import argparse
 import subprocess
 import sys
 
-QUALITY_PATHS = [
-    "app/ai/client.py",
-    "app/api/v1/endpoints/equipment.py",
-    "app/api/v1/endpoints/intelligence.py",
-    "app/api/v1/endpoints/ml.py",
-    "app/api/v1/router.py",
-    "app/core/config.py",
-    "app/db/migrations.py",
-    "app/db/session.py",
-    "app/gateways",
-    "app/main.py",
-    "app/models/__init__.py",
-    "app/models/base.py",
-    "app/models/equipment.py",
-    "app/models/intelligence.py",
-    "app/models/ml.py",
-    "app/ml",
-    "app/runtime.py",
-    "app/schemas/equipment.py",
-    "app/schemas/intelligence.py",
-    "app/schemas/ml.py",
-    "app/seed.py",
-    "app/services/intelligence_service.py",
-    "app/services/simulator.py",
-    "scripts/quality.py",
-    "scripts/verify_migrations.py",
-    "tests/test_database_migrations.py",
-    "tests/test_intelligent_maintenance.py",
-    "tests/test_ml_pipeline.py",
-    "tests/test_ml_registry.py",
-    "tests/test_dataset_tooling.py",
-    "../../scripts/audit_bearing_dataset.py",
-    "../../scripts/download_dataset.py",
-    "../../scripts/download_paderborn_dataset.py",
-    "../../scripts/prepare_bearing_dataset.py",
-]
+QUALITY_PATHS = ["app", "alembic", "tests", "scripts", "../../scripts"]
 
 
 def main() -> None:

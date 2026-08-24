@@ -8,10 +8,12 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/api/v1/endpoints/*.py" = ["B008"]
+"../../scripts/*.py" = ["E402"]
 
 [tool.pytest.ini_options]
 asyncio_default_fixture_loop_scope = "function"
 addopts = "--strict-markers"
+filterwarnings = ["error::sqlalchemy.exc.LegacyAPIWarning"]
 
 [tool.coverage.run]
 source = ["app"]
@@ -28,7 +30,10 @@ strict = true
 follow_imports = "silent"
 files = [
   "app/db/session.py",
+  "app/db/alembic.py",
+  "app/db/migrations.py",
   "app/gateways",
+  "app/industrial_gateway",
   "app/models/intelligence.py",
   "app/models/ml.py",
   "app/ml",
@@ -36,10 +41,16 @@ files = [
   "app/api/v1/endpoints/ml.py",
   "app/schemas/intelligence.py",
   "app/services/intelligence_service.py",
+  "app/services/approval_service.py",
   "app/services/simulator.py",
   "app/runtime.py",
 ]
 
 [[tool.mypy.overrides]]
-module = ["joblib", "scipy.*", "sklearn.*"]
+module = ["joblib", "scipy.*", "sklearn.*", "asyncua.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# asyncua 未在 __all__ 中显式导出 Client，按动态模块处理（返回 Any）。
+module = ["asyncua.*"]
+follow_imports = "skip"

@@ -20,6 +20,9 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps" / "api"))
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 
+from prepare_bearing_v2 import V2Row, prepare_paderborn_bearing
+from run_fault_v2 import Candidate, _binary_metrics, _classifier
+
 from app.ml.artifacts import save_artifact_bundle
 from app.ml.v2_governance import PaderbornAccessPolicy
 from app.ml.v2_research import (
@@ -27,8 +30,6 @@ from app.ml.v2_research import (
     PaderbornFaultV2Preprocessor,
     V2Dataset,
 )
-from prepare_bearing_v2 import V2Row, prepare_paderborn_bearing
-from run_fault_v2 import Candidate, _binary_metrics, _classifier
 
 SEED = 20260803
 

@@ -1,14 +1,14 @@
 """知识库检索：基于关键词的全文检索（MVP 基线，向量不可用时自动降级到此）。"""
+
 from __future__ import annotations
 
 import re
 from typing import Any
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.equipment import FaultCode
-from app.models.knowledge import KnowledgeArticle, KnowledgeChunk
+from app.models.knowledge import KnowledgeArticle
 
 
 def _tokenize(text: str) -> list[str]:
@@ -46,10 +46,18 @@ def search_articles(
         if fc:
             fc_filter = fc.id
     for art in articles:
-        if equipment_type_id and art.equipment_type_id and art.equipment_type_id != equipment_type_id:
+        if (
+            equipment_type_id
+            and art.equipment_type_id
+            and art.equipment_type_id != equipment_type_id
+        ):
             # 不强制过滤，只是降权
             pass
-        haystack = " ".join(filter(None, [art.title, art.content, art.summary, " ".join(art.tags or [])]))
+        haystack = " ".join(
+            filter(
+                None, [art.title, art.content, art.summary, " ".join(art.tags or [])]
+            )
+        )
         ht = _tokenize(haystack)
         if not tokens:
             score = 0.1
@@ -92,7 +100,9 @@ def find_similar_work_orders(db, wo, limit: int = 3) -> list:
     )
     scored = []
     for c in candidates:
-        ct = set(_tokenize(" ".join(filter(None, [c.title, c.fault_description or ""]))))
+        ct = set(
+            _tokenize(" ".join(filter(None, [c.title, c.fault_description or ""])))
+        )
         if not tokens or not ct:
             continue
         overlap = len(tokens & ct) / max(len(tokens), 1)
