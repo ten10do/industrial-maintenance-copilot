@@ -144,7 +144,11 @@ async function completeAllChecklistItems(page: any) {
       );
       await checkbox.check({ force: true });
       expect((await updateResponse).ok()).toBeTruthy();
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      // 等待 SafetyChecklist 全局 loadingId 清空（animate-pulse 标记消失），
+      // 确保下一次勾选不被组件的单飞守卫静默忽略。
+      await expect(
+        page.locator('[data-testid="safety-checklist"] span.animate-pulse')
+      ).toHaveCount(0, { timeout: 15000 });
       await expect(checkbox).toBeChecked({ timeout: 5000 });
     }
   }
@@ -169,7 +173,14 @@ async function completeSafetyChecklistItems(page: any) {
       );
       await checkbox.check({ force: true });
       expect((await updateResponse).ok()).toBeTruthy();
-      await page.waitForLoadState('networkidle', { timeout: 10000 });
+      // SafetyChecklist 以全局 loadingId 单飞串行处理勾选：上一个勾选的
+      // PUT→refetch 未落地前，下一次 onChange 会被组件静默忽略。
+      // 加载中的项会渲染 span.animate-pulse 标记；等待其清零即组件回到空闲，
+      // 下一次勾选必然被受理（确定性信号，替代对响应速度的侥幸依赖）。
+      await expect(
+        page.locator('[data-testid="checklist-group-safety"] span.animate-pulse')
+      ).toHaveCount(0, { timeout: 15000 });
+      await expect(checkbox).toBeChecked({ timeout: 5000 });
     }
   }
 }
