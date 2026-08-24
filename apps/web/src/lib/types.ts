@@ -453,10 +453,68 @@ export interface IndustrialAlarm {
   acknowledged_at: string | null;
   cleared_at: string | null;
   created_at: string;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL' | null;
+  analysis_status: string;
+  correlation_group_id: string | null;
+  correlated_alarm_count: number;
 }
 
 export interface IndustrialAlarmList {
   items: IndustrialAlarm[];
   total: number;
   read_only_source: boolean;
+}
+
+// ============ Alarm Intelligence（AI-assisted analysis，仅建议） ============
+
+export interface AlarmAnalysis {
+  id: number;
+  alarm_id: number;
+  correlation_group_id: string | null;
+  summary: string;
+  root_cause_hypothesis: string;
+  contributing_factors: string[];
+  evidence: Record<string, unknown>;
+  citations: Array<Record<string, string | number | null | undefined>>;
+  confidence: number;
+  recommended_actions: string[];
+  suggested_priority: string;
+  related_work_order_id: number | null;
+  created_work_order_id: number | null;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  analysis_status: string;
+  review_status: 'approve' | 'reject' | 'request_more_evidence' | null;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  agent_run_id: number | null;
+  requires_human_review: boolean;
+  model_version: string;
+  is_mock: boolean;
+  created_at: string;
+}
+
+export interface AlarmWorkOrderResult {
+  alarm_id: number;
+  analysis_id: number;
+  work_order_id: number;
+  work_order_code: string;
+  status: string;
+  created: boolean;
+}
+
+export interface AlarmCorrelationGroup {
+  group_id: string;
+  reason: string;
+  alarm_ids: number[];
+  equipment_ids: number[];
+  severity: string;
+  window_start: string | null;
+  window_end: string | null;
+  size: number;
+}
+
+export interface AlarmCorrelateResult {
+  groups: AlarmCorrelationGroup[];
+  total_alarms: number;
 }

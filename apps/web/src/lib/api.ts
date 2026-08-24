@@ -1,4 +1,4 @@
-import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList } from './types';
+import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList, AlarmAnalysis, AlarmCorrelateResult, AlarmWorkOrderResult } from './types';
 
 const BASE = '/api/v1';
 
@@ -331,4 +331,28 @@ export async function listAlarms(params?: Record<string, string>) {
 }
 export async function acknowledgeAlarm(id: number) {
   return request<{ ok: boolean; id: number; acknowledged: boolean }>(`/alarms/${id}/acknowledge`, { method: 'POST' });
+}
+
+// Alarm Intelligence (AI-assisted analysis, suggestions only)
+export async function analyzeAlarm(id: number) {
+  return request<AlarmAnalysis>(`/alarms/${id}/analyze`, { method: 'POST' });
+}
+export async function getAlarmAnalysis(id: number) {
+  return request<AlarmAnalysis>(`/alarms/${id}/analysis`);
+}
+export async function correlateAlarms(windowSeconds?: number) {
+  const qs = windowSeconds ? `?window_seconds=${windowSeconds}` : '';
+  return request<AlarmCorrelateResult>(`/alarms/correlate${qs}`, { method: 'POST' });
+}
+export async function reviewAlarm(
+  id: number,
+  action: 'approve' | 'reject' | 'request_more_evidence',
+  note?: string,
+) {
+  return request<AlarmAnalysis>(`/alarms/${id}/review`, {
+    method: 'POST', body: JSON.stringify({ action, note }),
+  });
+}
+export async function createAlarmWorkOrder(id: number) {
+  return request<AlarmWorkOrderResult>(`/alarms/${id}/create-work-order`, { method: 'POST' });
 }
