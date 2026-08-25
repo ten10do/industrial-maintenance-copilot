@@ -113,6 +113,22 @@ class MotorSimulator:
         """该设备暴露的全部字符串 NodeId（默认 ns=2）。"""
         return [f"ns={namespace};s={self.prefix}.{name}" for name in NODE_NAMES]
 
+    def set_scenario(self, scenario: str) -> None:
+        """切换工况并确定性复位到该工况的 tick 0（Demo 场景控制）。
+
+        仅修改软件仿真器内部状态；不产生任何对外写操作。
+        """
+        if scenario not in SUPPORTED_SCENARIOS:
+            raise ValueError(
+                f"不支持的仿真场景: {scenario}（支持: {sorted(SUPPORTED_SCENARIOS)}）"
+            )
+        self.scenario = scenario
+        self._tick = 0
+        self._current = {}
+        self._previous = {}
+        self._changes = {}
+        self.advance()
+
     def advance(self) -> dict[str, float | bool]:
         """推进一个采样周期并返回当前值快照（确定性）。"""
         rng = random.Random(f"{self.seed}:{self.scenario}:{self._tick}")
