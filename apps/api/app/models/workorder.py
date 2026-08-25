@@ -87,19 +87,31 @@ class WorkOrder(AuditMixin, Base):
         cascade="all, delete-orphan",
     )
     logs: Mapped[list[MaintenanceLog]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="MaintenanceLog.created_at, MaintenanceLog.id",
+        cascade="all, delete-orphan",
     )
     labor_entries: Mapped[list[LaborEntry]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="LaborEntry.created_at, LaborEntry.id",
+        cascade="all, delete-orphan",
     )
     spare_parts: Mapped[list[WorkOrderSparePart]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="WorkOrderSparePart.created_at, WorkOrderSparePart.id",
+        cascade="all, delete-orphan",
     )
     status_history: Mapped[list[WorkOrderStatusHistory]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        # 追加式历史：插入序即事件序；changed_at 可空，SQLite/PostgreSQL
+        # 对 NULL 的排序语义不同，故以 id 作为跨后端确定性键。
+        order_by="WorkOrderStatusHistory.id",
+        cascade="all, delete-orphan",
     )
     assignments: Mapped[list[WorkOrderAssignment]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="WorkOrderAssignment.id",
+        cascade="all, delete-orphan",
     )
 
 
