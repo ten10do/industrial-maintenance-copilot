@@ -17,6 +17,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, supervisor_or_admin
+from app.core.trace import bind_trace, current_trace_id
 from app.db.session import get_db
 from app.industrial_gateway.alarm_intelligence.correlation import (
     DEFAULT_WINDOW_SECONDS,
@@ -235,6 +236,8 @@ def analyze_alarm(
     }:
         raise HTTPException(status_code=409, detail="已审批的分析不能被重新生成")
 
+    # 链路继承：分析必须沿用报警自身的 trace_id（request_id 与业务 trace 分离）。
+    bind_trace(alarm.trace_id, source="alarm-analyze")
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
     agent_run = AgentRun(
@@ -246,6 +249,7 @@ def analyze_alarm(
         confidence=0.0,
         requires_human_review=True,
         started_at=started_at,
+        trace_id=current_trace_id(),
     )
     db.add(agent_run)
     db.flush()
@@ -355,8 +359,11 @@ def analyze_alarm(
 
     record = existing_record
     if record is None:
-        record = AlarmAnalysisRecord(alarm_id=alarm.id)
+        record = AlarmAnalysisRecord(alarm_id=alarm.id, trace_id=current_trace_id())
         db.add(record)
+    elif not record.trace_id:
+        # 历史分析记录补齐链路（继承报警 trace）。
+        record.trace_id = alarm.trace_id
     record.correlation_group_id = correlation_group_id
     record.summary = understanding.summary
     record.root_cause_hypothesis = rca.hypothesis
@@ -518,6 +525,8 @@ def create_alarm_work_order(
             status_code=409,
             detail="必须先由主管或管理员批准报警分析，才能创建工单",
         )
+    # 链路继承：工单沿用分析记录（最终是报警）的 trace_id。
+    bind_trace(record.trace_id, source="alarm-work-order")
     claim = db.execute(
         update(AlarmAnalysisRecord)
         .where(
@@ -561,6 +570,7 @@ def create_alarm_work_order(
         acceptance_criteria="完成现场复核、维修后测试与遥测验证，未经审批不得执行设备命令。",
         created_by_id=user.id,
         created_by=str(user.id),
+        trace_id=current_trace_id(),
     )
     db.add(work_order)
     db.flush()

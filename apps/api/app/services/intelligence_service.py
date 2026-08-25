@@ -10,6 +10,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.ai.knowledge_search import search_articles
+from app.core.trace import current_trace_id, start_trace
 from app.gateways.equipment import TelemetrySnapshot
 from app.gateways.notifications import notification_gateway
 from app.models.base import (
@@ -252,6 +253,10 @@ def ingest_snapshot(
     *,
     auto_create_work_orders: bool = True,
 ) -> IngestionResult:
+    # 工业事件入口：无既有链路时开启新 trace（网关同步/订阅 flush 已先行绑定，
+    # 此处兜底覆盖手动遥测摄入等直接调用）。
+    if current_trace_id() is None:
+        start_trace("manual-telemetry-ingest")
     assessment = assess_snapshot(snapshot)
     telemetry = TelemetryRecord(
         equipment_id=equipment.id,
@@ -268,6 +273,7 @@ def ingest_snapshot(
         quality=snapshot.quality,
         is_anomaly=assessment.is_anomaly,
         anomaly_metrics=assessment.anomaly_metrics,
+        trace_id=current_trace_id(),
     )
     db.add(telemetry)
     db.flush()
@@ -340,6 +346,7 @@ def ingest_snapshot(
                 confidence=assessment.confidence,
                 requires_human_review=assessment.confidence < 0.8,
                 started_at=datetime.now(UTC),
+                trace_id=current_trace_id(),
             )
             db.add(escalation_run)
             db.flush()
@@ -409,6 +416,7 @@ def ingest_snapshot(
         diagnosis_summary=assessment.diagnosis,
         confidence=assessment.confidence,
         detected_at=snapshot.collected_at,
+        trace_id=current_trace_id(),
     )
     db.add(anomaly)
     db.flush()
@@ -427,6 +435,7 @@ def ingest_snapshot(
         confidence=assessment.confidence,
         requires_human_review=assessment.confidence < 0.8,
         started_at=datetime.now(UTC),
+        trace_id=current_trace_id(),
     )
     db.add(agent_run)
     db.flush()
@@ -792,6 +801,7 @@ def _create_prediction(
         maintenance_window_end=maintenance_window_end,
         factors=assessment.anomaly_metrics,
         is_mock=True,
+        trace_id=current_trace_id(),
     )
     equipment.next_maintenance_at = maintenance_window_end.date()
     db.add(prediction)
@@ -827,6 +837,7 @@ def _create_recommendation(
         risk_operations=["shutdown", "reset_alarm", "restart"],
         dispatch_suggestion=dispatch,
         generated_at=datetime.now(UTC),
+        trace_id=current_trace_id(),
     )
     db.add(recommendation)
     db.flush()
@@ -990,6 +1001,7 @@ def _create_predictive_work_order(
         ],
         acceptance_criteria="异常指标恢复阈值内，健康分不低于 80，空载与负载测试通过。",
         created_by="maintenance-agent",
+        trace_id=current_trace_id(),
     )
     db.add(work_order)
     db.flush()
@@ -1053,6 +1065,7 @@ def _create_operation_approval(
             status="pending",
             requested_by=None,
             requested_at=datetime.now(UTC),
+            trace_id=current_trace_id(),
         )
     )
 

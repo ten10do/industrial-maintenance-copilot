@@ -77,6 +77,8 @@ class WorkOrder(AuditMixin, Base):
     completion_photos: Mapped[list | None] = mapped_column(JSON, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # 工业事件链路追踪：继承自报警分析或智能维护链路（历史数据为 NULL）。
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     equipment: Mapped[Equipment | None] = relationship()  # type: ignore[name-defined]
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])  # type: ignore[name-defined]

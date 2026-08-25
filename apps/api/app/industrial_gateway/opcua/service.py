@@ -28,6 +28,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.trace import current_trace_id, start_trace
 from app.db.session import SessionLocal
 from app.gateways.equipment import TelemetrySnapshot
 from app.industrial_gateway.alarms import (
@@ -294,6 +295,8 @@ class OpcUaGatewayService:
     async def sync_once(self, db: Session) -> GatewaySyncResult:
         """执行一次完整同步。连接失败时安全回退：不写任何业务数据。"""
         async with self._lock:
+            # 工业事件入口：每个轮询周期一条新链路（读取→质量→入库共享 trace）。
+            start_trace("gateway-poll")
             started = time.perf_counter()
             result = GatewaySyncResult()
             try:
@@ -695,11 +698,18 @@ class OpcUaGatewayService:
     async def flush_due(self, db: Session) -> dict[str, Any]:
         """把到期的缓冲事件聚合为快照并进入既有 AI 链路。"""
         events = self._buffer.drain_due()
+        if not events:
+            return await self._ingest_events(db, events)
+        # 工业事件入口：一次 flush（一批 DataChange）共享同一条链路。
+        start_trace("gateway-subscription-flush")
         return await self._ingest_events(db, events)
 
     async def flush_now(self, db: Session) -> dict[str, Any]:
         """忽略 debounce 立即冲刷缓冲（停止订阅前 / 手动 / 测试）。"""
         events = self._buffer.force_drain()
+        if not events:
+            return await self._ingest_events(db, events)
+        start_trace("gateway-subscription-flush")
         return await self._ingest_events(db, events)
 
     async def _ingest_events(
@@ -804,6 +814,7 @@ class OpcUaGatewayService:
                         state, fields, alarm_active=alarm_active
                     ),
                     source="opcua-subscription",
+                    trace_id=current_trace_id(),
                 )
             )
         self._alarm_states[equipment.id] = state

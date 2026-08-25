@@ -68,6 +68,8 @@ class TelemetryRecord(TimestampMixin, Base):
     quality: Mapped[float] = mapped_column(Float, default=1.0)
     is_anomaly: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     anomaly_metrics: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # 工业事件链路追踪：同一次事件链共享同一 trace_id（历史数据为 NULL）。
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class AnomalyEvent(TimestampMixin, Base):
@@ -96,6 +98,7 @@ class AnomalyEvent(TimestampMixin, Base):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class FaultDiagnosis(TimestampMixin, Base):
@@ -152,6 +155,7 @@ class RiskPrediction(TimestampMixin, Base):
         String(48), default="deterministic-rules-v1"
     )
     is_mock: Mapped[bool] = mapped_column(Boolean, default=True)
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class MaintenanceRecommendation(TimestampMixin, Base):
@@ -180,6 +184,7 @@ class MaintenanceRecommendation(TimestampMixin, Base):
         ForeignKey("work_orders.id", ondelete="SET NULL"), nullable=True
     )
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class SparePartReservation(TimestampMixin, Base):
@@ -259,6 +264,7 @@ class OperationApproval(TimestampMixin, Base):
     reconciled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class OperationExecutionAudit(Base):
@@ -329,6 +335,8 @@ class AgentRun(TimestampMixin, Base):
         DateTime(timezone=True), nullable=True
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Agent 链路追踪：与所属工业事件链共享 trace_id。
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
 
 class ToolInvocation(TimestampMixin, Base):
