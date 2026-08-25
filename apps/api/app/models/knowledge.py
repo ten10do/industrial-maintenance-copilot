@@ -44,7 +44,10 @@ class KnowledgeArticle(AuditMixin, Base):
     view_count: Mapped[int] = mapped_column(Integer, default=0)
 
     chunks: Mapped[list[KnowledgeChunk]] = relationship(
-        back_populates="article", cascade="all, delete-orphan"
+        back_populates="article",
+        # RAG 分片顺序有业务含义：按写入时的 chunk_index 稳定返回。
+        order_by="KnowledgeChunk.chunk_index, KnowledgeChunk.id",
+        cascade="all, delete-orphan",
     )
 
 

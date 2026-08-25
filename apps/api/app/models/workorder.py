@@ -77,6 +77,8 @@ class WorkOrder(AuditMixin, Base):
     completion_photos: Mapped[list | None] = mapped_column(JSON, nullable=True)
     rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     submitted_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    # 工业事件链路追踪：继承自报警分析或智能维护链路（历史数据为 NULL）。
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     equipment: Mapped[Equipment | None] = relationship()  # type: ignore[name-defined]
     assignee: Mapped[User | None] = relationship(foreign_keys=[assignee_id])  # type: ignore[name-defined]
@@ -87,19 +89,31 @@ class WorkOrder(AuditMixin, Base):
         cascade="all, delete-orphan",
     )
     logs: Mapped[list[MaintenanceLog]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="MaintenanceLog.created_at, MaintenanceLog.id",
+        cascade="all, delete-orphan",
     )
     labor_entries: Mapped[list[LaborEntry]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="LaborEntry.created_at, LaborEntry.id",
+        cascade="all, delete-orphan",
     )
     spare_parts: Mapped[list[WorkOrderSparePart]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="WorkOrderSparePart.created_at, WorkOrderSparePart.id",
+        cascade="all, delete-orphan",
     )
     status_history: Mapped[list[WorkOrderStatusHistory]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        # 追加式历史：插入序即事件序；changed_at 可空，SQLite/PostgreSQL
+        # 对 NULL 的排序语义不同，故以 id 作为跨后端确定性键。
+        order_by="WorkOrderStatusHistory.id",
+        cascade="all, delete-orphan",
     )
     assignments: Mapped[list[WorkOrderAssignment]] = relationship(
-        back_populates="work_order", cascade="all, delete-orphan"
+        back_populates="work_order",
+        order_by="WorkOrderAssignment.id",
+        cascade="all, delete-orphan",
     )
 
 

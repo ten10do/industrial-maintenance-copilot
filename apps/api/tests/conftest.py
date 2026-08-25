@@ -1,6 +1,13 @@
 """Test fixtures for fault report conversion tests."""
 
+# Observability 共享脚手架依赖（保持模块顶部导入）。
+import asyncio as _asyncio
+from datetime import UTC as _UTC
+from datetime import datetime as _datetime
+from pathlib import Path as _Path
+
 import pytest
+import yaml as _yaml
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
@@ -14,6 +21,9 @@ from app.models.base import (
     FaultReportStatusEnum,
     RoleEnum,
     UrgencyEnum,
+)
+from app.models.base import (
+    RiskLevelEnum as _RiskLevelEnum,
 )
 from app.models.equipment import Equipment, EquipmentType, FaultCode
 from app.models.fault import FaultReport
@@ -207,3 +217,151 @@ def fault_report_critical(db, equipment, fault_code):
     db.commit()
     db.refresh(fr)
     return fr
+
+
+# ---------------------------------------------------------------------------
+# Observability 共享脚手架：真实订阅故障链 → 带 trace_id 的领域实体。
+# （导入统一放在文件顶部）
+# ---------------------------------------------------------------------------
+
+_TRACE_NODES = [
+    ("Temperature", "temperature"),
+    ("Vibration", "vibration"),
+    ("Current", "current"),
+    ("Speed", "speed"),
+    ("Voltage", "voltage"),
+    ("LoadRatio", "load"),
+]
+_TRACE_UNITS = {
+    "temperature": "celsius",
+    "vibration": "mm/s",
+    "current": "A",
+    "speed": "rpm",
+    "voltage": "V",
+    "load": "%",
+}
+_TRACE_FIELDS = {
+    "temperature": "bearing_temperature",
+    "vibration": "vibration_rms",
+    "current": "motor_current",
+    "speed": "rotational_speed",
+    "voltage": "motor_voltage",
+    "load": "load_ratio",
+}
+
+
+def run_fault_trace_chain(db, tmp_path, *, code_suffix: str = ""):
+    """真实订阅故障链（Mock 客户端）→ 返回 (equipment, alarm, work_order)。
+
+    生成的所有领域实体共享同一条工业 trace_id；不伪造任何记录。
+    局部导入：避免 conftest 顶层触发 industrial_gateway ↔ app.models 的
+    包初始化顺序问题。
+    """
+
+    from app.industrial_gateway.models import IndustrialAlarm as _IndustrialAlarm
+    from app.industrial_gateway.opcua.client import MockOpcUaClient as _MockClient
+    from app.industrial_gateway.opcua.models import NodeRead as _NodeRead
+    from app.industrial_gateway.opcua.service import OpcUaGatewayService as _Service
+    from app.industrial_gateway.opcua.subscription import (
+        MockSubscriptionClient as _SubClient,
+    )
+    from app.industrial_gateway.opcua.subscription import (
+        NodeDataChange as _NodeDataChange,
+    )
+    from app.industrial_gateway.simulator.generator import MotorSimulator as _Sim
+    from app.models.workorder import WorkOrder as _WorkOrder
+
+    equipment = Equipment(
+        code=f"EQ-TRACE-01{code_suffix}",
+        name="链路追踪验证电机",
+        status=EquipmentStatusEnum.running,
+        risk_level=_RiskLevelEnum.low,
+        qr_token=f"qr-trace-01{code_suffix}",
+    )
+    db.add(equipment)
+    db.commit()
+    db.refresh(equipment)
+
+    config = {
+        "mappings": [
+            {
+                "node_id": f"ns=2;s=Motor001.{name}",
+                "equipment_code": equipment.code,
+                "metric": metric,
+                "unit": _TRACE_UNITS[metric],
+            }
+            for name, metric in _TRACE_NODES
+        ]
+    }
+    config_path = _Path(tmp_path) / "trace-chain-mapping.yaml"
+    config_path.write_text(
+        _yaml.safe_dump(config, allow_unicode=True), encoding="utf-8"
+    )
+
+    simulator = _Sim(seed=42, scenario="fault")
+
+    def initial_provider(node_id: str) -> _NodeRead:
+        _, metric = next(
+            (n, m) for n, m in _TRACE_NODES if node_id == f"ns=2;s=Motor001.{n}"
+        )
+        values = simulator.current_values()
+        return _NodeRead(
+            node_id=node_id,
+            value=values.get(_TRACE_FIELDS[metric]),
+            source_timestamp=_datetime.now(_UTC),
+            quality="good",
+        )
+
+    sub_client = _SubClient(initial_provider=initial_provider)
+    service = _Service(
+        _MockClient(value_provider=simulator.value_provider()),
+        mode="mock",
+        poll_interval_seconds=5.0,
+        mapping_config_path=str(config_path),
+        before_sync=simulator.advance,
+        subscription_client_factory=lambda: sub_client,
+        session_factory=lambda: Session(bind=db.get_bind(), autoflush=False),
+    )
+
+    async def _chain():
+        await service.start_subscription(db, client=sub_client)
+        for _ in range(16):
+            simulator.advance()
+        now = _datetime.now(_UTC)
+        values = simulator.current_values()
+        for name, _m in _TRACE_NODES:
+            sub_client.publish(
+                _NodeDataChange(
+                    node_id=f"ns=2;s=Motor001.{name}",
+                    value=values[name],
+                    source_timestamp=now,
+                    status_code=0,
+                    quality="good",
+                )
+            )
+        flush = await service.flush_now(db)
+        await service.stop_subscription(db)
+        return flush
+
+    flush = _asyncio.run(_chain())
+    assert flush["snapshots_ingested"] == 1
+
+    alarm = (
+        db.query(_IndustrialAlarm)
+        .filter(_IndustrialAlarm.equipment_id == equipment.id)
+        .first()
+    )
+    work_order = (
+        db.query(_WorkOrder).filter(_WorkOrder.equipment_id == equipment.id).first()
+    )
+    return equipment, alarm, work_order
+
+
+@pytest.fixture
+def fault_chain(db, tmp_path):
+    """可重复调用的故障链工厂：fault_chain() / fault_chain(code_suffix="-2")。"""
+
+    def _make(code_suffix: str = ""):
+        return run_fault_trace_chain(db, tmp_path, code_suffix=code_suffix)
+
+    return _make

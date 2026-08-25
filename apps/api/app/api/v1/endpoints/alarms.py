@@ -17,6 +17,9 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, supervisor_or_admin
+from app.core.metrics import get_metrics
+from app.core.otel import traced_span
+from app.core.trace import bind_trace, current_trace_id
 from app.db.session import get_db
 from app.industrial_gateway.alarm_intelligence.correlation import (
     DEFAULT_WINDOW_SECONDS,
@@ -212,6 +215,7 @@ def get_alarm_event(
     return _alarm_out(alarm, analysis)
 
 
+@traced_span("alarm.analyze")
 @router.post("/{alarm_id}/analyze", response_model=AlarmAnalysisOut)
 def analyze_alarm(
     alarm_id: int,
@@ -235,6 +239,8 @@ def analyze_alarm(
     }:
         raise HTTPException(status_code=409, detail="已审批的分析不能被重新生成")
 
+    # 链路继承：分析必须沿用报警自身的 trace_id（request_id 与业务 trace 分离）。
+    bind_trace(alarm.trace_id, source="alarm-analyze")
     started_at = datetime.now(UTC)
     started_clock = perf_counter()
     agent_run = AgentRun(
@@ -246,7 +252,11 @@ def analyze_alarm(
         confidence=0.0,
         requires_human_review=True,
         started_at=started_at,
+        trace_id=current_trace_id(),
     )
+    get_metrics().agent_runs_total.labels(
+        agent_name="alarm-analyzer", status="running"
+    ).inc()
     db.add(agent_run)
     db.flush()
 
@@ -355,8 +365,11 @@ def analyze_alarm(
 
     record = existing_record
     if record is None:
-        record = AlarmAnalysisRecord(alarm_id=alarm.id)
+        record = AlarmAnalysisRecord(alarm_id=alarm.id, trace_id=current_trace_id())
         db.add(record)
+    elif not record.trace_id:
+        # 历史分析记录补齐链路（继承报警 trace）。
+        record.trace_id = alarm.trace_id
     record.correlation_group_id = correlation_group_id
     record.summary = understanding.summary
     record.root_cause_hypothesis = rca.hypothesis
@@ -442,11 +455,23 @@ def analyze_alarm(
     agent_run.confidence = rca.confidence
     agent_run.requires_human_review = mandatory_review
     agent_run.finished_at = datetime.now(UTC)
+    _metrics = get_metrics()
+    _metrics.alarm_analysis_latency_seconds.observe(duration_ms / 1000)
+    _metrics.alarm_analysis_total.labels(status=record.analysis_status).inc()
+    if mandatory_review:
+        _metrics.alarm_manual_review_total.labels(risk_level=risk.risk_level).inc()
+    _metrics.agent_runs_total.labels(
+        agent_name="alarm-analyzer", status="completed"
+    ).inc()
+    _metrics.agent_run_latency_seconds.labels(agent_name="alarm-analyzer").observe(
+        duration_ms / 1000
+    )
     db.commit()
     db.refresh(record)
     return AlarmAnalysisOut.model_validate(record)
 
 
+@traced_span("approval.review")
 @router.post("/{alarm_id}/review", response_model=AlarmAnalysisOut)
 def review_alarm_analysis(
     alarm_id: int,
@@ -482,11 +507,13 @@ def review_alarm_analysis(
     record.reviewed_at = datetime.now(UTC)
     record.review_note = payload.note
     record.requires_human_review = payload.action == "request_more_evidence"
+    get_metrics().human_review_total.labels(action=payload.action).inc()
     db.commit()
     db.refresh(record)
     return AlarmAnalysisOut.model_validate(record)
 
 
+@traced_span("work_order.create", {"work_order.source": "alarm-intelligence"})
 @router.post("/{alarm_id}/create-work-order", response_model=AlarmWorkOrderOut)
 def create_alarm_work_order(
     alarm_id: int,
@@ -518,6 +545,8 @@ def create_alarm_work_order(
             status_code=409,
             detail="必须先由主管或管理员批准报警分析，才能创建工单",
         )
+    # 链路继承：工单沿用分析记录（最终是报警）的 trace_id。
+    bind_trace(record.trace_id, source="alarm-work-order")
     claim = db.execute(
         update(AlarmAnalysisRecord)
         .where(
@@ -561,7 +590,9 @@ def create_alarm_work_order(
         acceptance_criteria="完成现场复核、维修后测试与遥测验证，未经审批不得执行设备命令。",
         created_by_id=user.id,
         created_by=str(user.id),
+        trace_id=current_trace_id(),
     )
+    get_metrics().work_orders_created_total.labels(source="alarm-intelligence").inc()
     db.add(work_order)
     db.flush()
     db.add(

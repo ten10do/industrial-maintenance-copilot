@@ -66,6 +66,13 @@ class Settings(BaseSettings):
     # 演示数据
     SEED_ON_STARTUP: bool = True
 
+    # Observability（可选 OpenTelemetry；无 Collector 时必须可正常运行）
+    OTEL_ENABLED: bool = False
+    OTEL_SERVICE_NAME: str = "industrial-maintenance-api"
+    OTEL_EXPORTER_OTLP_ENDPOINT: str = ""
+    # 采样率 0.0~1.0；本地/demo 建议 1.0，生产策略不在此硬编码。
+    OTEL_TRACE_SAMPLE_RATE: float = Field(default=1.0, ge=0.0, le=1.0)
+
     @property
     def is_development(self) -> bool:
         return self.APP_ENV.strip().lower() == "development"

@@ -146,6 +146,8 @@ class IndustrialAlarm(TimestampMixin, Base):
     cleared_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    # 工业事件链路追踪：继承自产生该报警的遥测/订阅链（历史数据为 NULL）。
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
 
     equipment: Mapped[Equipment] = relationship()
 
@@ -203,3 +205,5 @@ class AlarmAnalysisRecord(TimestampMixin, Base):
         String(48), default="deterministic-rules-v1"
     )
     is_mock: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 工业事件链路追踪：继承自所属 IndustrialAlarm（历史数据为 NULL）。
+    trace_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)

@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import {
   LayoutDashboard, AlertTriangle, Wrench, Cpu, BookOpen, Bot, Settings, Menu, X, LogOut,
-  Activity, BrainCircuit, ShieldCheck, RadioTower, BellRing
+  Activity, BrainCircuit, ShieldCheck, RadioTower, BellRing, Gauge
 } from 'lucide-react';
 
 interface NavItem {
@@ -26,6 +26,7 @@ const ALL_NAV_ITEMS: NavItem[] = [
   { label: '操作审批中心', href: '/approvals', icon: <ShieldCheck size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '运维知识中心', href: '/knowledge', icon: <BookOpen size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '运维 Agent', href: '/copilot', icon: <Bot size={18} />, roles: ['admin', 'supervisor', 'technician'] },
+  { label: '系统观测', href: '/observability', icon: <Gauge size={18} />, roles: ['admin', 'supervisor', 'technician'] },
   { label: '系统管理', href: '/admin', icon: <Settings size={18} />, roles: ['admin'] },
 ];
 

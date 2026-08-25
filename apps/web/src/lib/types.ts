@@ -518,3 +518,71 @@ export interface AlarmCorrelateResult {
   groups: AlarmCorrelationGroup[];
   total_alarms: number;
 }
+
+// ---------------- Observability & Traceability ----------------
+
+export interface TraceTimelineEntry {
+  stage: string;
+  entity_type: string;
+  entity_id: number;
+  timestamp: string | null;
+  equipment_id: number | null;
+  status: string | null;
+  [key: string]: unknown;
+}
+
+export interface TraceDetail {
+  trace_id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  equipment_ids: number[];
+  final_status: string;
+  stage_count: number;
+  event_count: number;
+  timeline: TraceTimelineEntry[];
+}
+
+export interface TraceSummary {
+  trace_id: string;
+  started_at: string | null;
+  last_activity_at: string;
+  equipment_ids: number[];
+  final_status: string;
+  stage_count: number;
+  event_count: number;
+}
+
+export interface TraceSearchResult {
+  total: number;
+  limit: number;
+  offset: number;
+  items: TraceSummary[];
+}
+
+export type ComponentStatus = 'healthy' | 'degraded' | 'unavailable' | 'unknown';
+
+export interface HealthComponent {
+  status: ComponentStatus;
+  detail?: string;
+  error_type?: string;
+  [key: string]: unknown;
+}
+
+export interface ObservabilityHealth {
+  status: string;
+  checked_at: string;
+  components: Record<string, HealthComponent>;
+}
+
+export interface MetricsSummary {
+  telemetry_events: number;
+  alarms_total: number;
+  alarms_active: number;
+  work_orders_total: number;
+  work_orders_open: number;
+  analyses_waiting_review: number;
+  agent_runs_total: number;
+  agent_avg_latency_ms: number | null;
+  traces_tracked: number;
+}

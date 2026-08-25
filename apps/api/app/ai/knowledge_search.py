@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.metrics import get_metrics
+from app.core.otel import traced_span
 from app.models.equipment import FaultCode
 from app.models.knowledge import KnowledgeArticle
 
@@ -27,6 +30,7 @@ def _tokenize(text: str) -> list[str]:
     return tokens
 
 
+@traced_span("rag.retrieve", {"rag.backend": "keyword-baseline"})
 def search_articles(
     db: Session,
     query: str,
@@ -34,7 +38,9 @@ def search_articles(
     fault_code: str | None = None,
     limit: int = 5,
 ) -> list[dict[str, Any]]:
-    """关键词检索知识文章，返回带得分的结果。"""
+    """关键词检索知识文章，返回带得分的结果。（含 RAG 运行指标）"""
+    _metrics = get_metrics()
+    _started = time.perf_counter()
     q = db.query(KnowledgeArticle).filter(KnowledgeArticle.status == "published")
     tokens = _tokenize(query)
     results: list[dict[str, Any]] = []
@@ -81,7 +87,14 @@ def search_articles(
                 }
             )
     results.sort(key=lambda x: x["score"], reverse=True)
-    return results[:limit]
+    page = results[:limit]
+    # RAG 运行指标（低基数标签；query 文本不进入指标）。
+    _metrics.rag_retrieval_latency_seconds.observe(time.perf_counter() - _started)
+    _metrics.rag_retrieval_total.labels(status="success").inc()
+    _metrics.rag_result_count.observe(len(page))
+    if not page:
+        _metrics.rag_empty_result_total.inc()
+    return page
 
 
 def find_similar_work_orders(db, wo, limit: int = 3) -> list:
