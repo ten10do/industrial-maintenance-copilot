@@ -47,6 +47,25 @@ _context: ContextVar[TraceContext | None] = ContextVar(
     "industrial_trace_context", default=None
 )
 
+# HTTP request_id 与工业业务 trace_id 语义严格分离：前者标识一次 HTTP
+# 请求，后者标识一次跨系统工业事件链；二者不可互相覆盖。
+_request_id_var: ContextVar[str | None] = ContextVar("http_request_id", default=None)
+
+
+def current_request_id() -> str | None:
+    """当前 HTTP request_id（由请求中间件设置）。"""
+    return _request_id_var.get()
+
+
+def set_request_id(value: str) -> object:
+    """设置当前请求的 request_id，返回用于还原的 token。"""
+    return _request_id_var.set(value)
+
+
+def reset_request_id(token: object) -> None:
+    """还原 request_id 上下文。"""
+    _request_id_var.reset(token)  # type: ignore[arg-type]
+
 
 def current_context() -> TraceContext | None:
     """返回当前上下文（无则 None）。只读，不创建。"""
@@ -103,3 +122,15 @@ def trace_attributes(**extra: object) -> dict[str, object]:
         attrs["trace_source"] = ctx.source
     attrs.update(extra)
     return attrs
+
+
+class TraceLogFilter(logging.Filter):
+    """把当前 trace_id / request_id 注入每条日志记录。
+
+    未处于任何上下文时以 "-" 占位，保持日志行格式稳定。
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.trace_id = current_trace_id() or "-"
+        record.request_id = current_request_id() or "-"
+        return True

@@ -17,6 +17,7 @@ from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, supervisor_or_admin
+from app.core.metrics import get_metrics
 from app.core.trace import bind_trace, current_trace_id
 from app.db.session import get_db
 from app.industrial_gateway.alarm_intelligence.correlation import (
@@ -251,6 +252,9 @@ def analyze_alarm(
         started_at=started_at,
         trace_id=current_trace_id(),
     )
+    get_metrics().agent_runs_total.labels(
+        agent_name="alarm-analyzer", status="running"
+    ).inc()
     db.add(agent_run)
     db.flush()
 
@@ -449,6 +453,17 @@ def analyze_alarm(
     agent_run.confidence = rca.confidence
     agent_run.requires_human_review = mandatory_review
     agent_run.finished_at = datetime.now(UTC)
+    _metrics = get_metrics()
+    _metrics.alarm_analysis_latency_seconds.observe(duration_ms / 1000)
+    _metrics.alarm_analysis_total.labels(status=record.analysis_status).inc()
+    if mandatory_review:
+        _metrics.alarm_manual_review_total.labels(risk_level=risk.risk_level).inc()
+    _metrics.agent_runs_total.labels(
+        agent_name="alarm-analyzer", status="completed"
+    ).inc()
+    _metrics.agent_run_latency_seconds.labels(agent_name="alarm-analyzer").observe(
+        duration_ms / 1000
+    )
     db.commit()
     db.refresh(record)
     return AlarmAnalysisOut.model_validate(record)
@@ -489,6 +504,7 @@ def review_alarm_analysis(
     record.reviewed_at = datetime.now(UTC)
     record.review_note = payload.note
     record.requires_human_review = payload.action == "request_more_evidence"
+    get_metrics().human_review_total.labels(action=payload.action).inc()
     db.commit()
     db.refresh(record)
     return AlarmAnalysisOut.model_validate(record)
@@ -572,6 +588,7 @@ def create_alarm_work_order(
         created_by=str(user.id),
         trace_id=current_trace_id(),
     )
+    get_metrics().work_orders_created_total.labels(source="alarm-intelligence").inc()
     db.add(work_order)
     db.flush()
     db.add(

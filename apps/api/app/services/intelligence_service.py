@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -10,6 +11,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.ai.knowledge_search import search_articles
+from app.core.metrics import get_metrics
 from app.core.trace import current_trace_id, start_trace
 from app.gateways.equipment import TelemetrySnapshot
 from app.gateways.notifications import notification_gateway
@@ -257,6 +259,17 @@ def ingest_snapshot(
     # 此处兜底覆盖手动遥测摄入等直接调用）。
     if current_trace_id() is None:
         start_trace("manual-telemetry-ingest")
+    _metrics = get_metrics()
+    _ingest_started = time.perf_counter()
+
+    def _finish_ingest(result: IngestionResult) -> IngestionResult:
+        """统一观测出口：telemetry ingest 延迟与计数。"""
+        _metrics.telemetry_ingest_latency_seconds.observe(
+            time.perf_counter() - _ingest_started
+        )
+        _metrics.telemetry_ingest_total.labels(status="accepted").inc()
+        return result
+
     assessment = assess_snapshot(snapshot)
     telemetry = TelemetryRecord(
         equipment_id=equipment.id,
@@ -298,7 +311,7 @@ def ingest_snapshot(
     if not assessment.is_anomaly or not assessment.fault_type:
         db.commit()
         db.refresh(telemetry)
-        return IngestionResult(telemetry, None, None, None, None)
+        return _finish_ingest(IngestionResult(telemetry, None, None, None, None))
 
     existing = (
         db.query(AnomalyEvent)
@@ -348,6 +361,9 @@ def ingest_snapshot(
                 started_at=datetime.now(UTC),
                 trace_id=current_trace_id(),
             )
+            get_metrics().agent_runs_total.labels(
+                agent_name="predictive-maintenance", status="running"
+            ).inc()
             db.add(escalation_run)
             db.flush()
             diagnosis = (
@@ -386,6 +402,11 @@ def ingest_snapshot(
                 "work_order_id": escalation_work_order.id,
             }
             escalation_run.finished_at = datetime.now(UTC)
+            get_metrics().agent_run_latency_seconds.labels(
+                agent_name="predictive-maintenance"
+            ).observe(
+                (escalation_run.finished_at - escalation_run.started_at).total_seconds()
+            )
             db.commit()
             for entity in (
                 telemetry,
@@ -395,16 +416,18 @@ def ingest_snapshot(
                 escalation_work_order,
             ):
                 db.refresh(entity)
-            return IngestionResult(
-                telemetry,
-                existing,
-                prediction,
-                recommendation,
-                escalation_work_order,
+            return _finish_ingest(
+                IngestionResult(
+                    telemetry,
+                    existing,
+                    prediction,
+                    recommendation,
+                    escalation_work_order,
+                )
             )
         db.commit()
         db.refresh(telemetry)
-        return IngestionResult(telemetry, existing, None, None, None)
+        return _finish_ingest(IngestionResult(telemetry, existing, None, None, None))
 
     anomaly = AnomalyEvent(
         equipment_id=equipment.id,
@@ -437,6 +460,9 @@ def ingest_snapshot(
         started_at=datetime.now(UTC),
         trace_id=current_trace_id(),
     )
+    get_metrics().agent_runs_total.labels(
+        agent_name="predictive-maintenance", status="running"
+    ).inc()
     db.add(agent_run)
     db.flush()
     _record_tool(
@@ -504,6 +530,9 @@ def ingest_snapshot(
         "work_order_id": work_order.id if work_order else None,
     }
     agent_run.finished_at = datetime.now(UTC)
+    get_metrics().agent_run_latency_seconds.labels(
+        agent_name="predictive-maintenance"
+    ).observe((agent_run.finished_at - agent_run.started_at).total_seconds())
 
     for supervisor in (
         db.query(User)
@@ -527,7 +556,9 @@ def ingest_snapshot(
         db.refresh(entity)
     if work_order:
         db.refresh(work_order)
-    return IngestionResult(telemetry, anomaly, prediction, recommendation, work_order)
+    return _finish_ingest(
+        IngestionResult(telemetry, anomaly, prediction, recommendation, work_order)
+    )
 
 
 def verify_maintenance(
@@ -789,23 +820,38 @@ def _create_prediction(
         RiskLevelEnum.low: 720.0,
     }[assessment.risk_level]
     maintenance_window_end = now + timedelta(hours=max(2.0, remaining_hours * 0.5))
-    prediction = RiskPrediction(
-        equipment_id=equipment.id,
-        anomaly_event_id=anomaly.id,
-        risk_level=assessment.risk_level,
-        failure_mode=assessment.fault_type or "unknown_anomaly",
-        probability=probability,
-        remaining_useful_life_hours=remaining_hours,
-        predicted_failure_at=now + timedelta(hours=remaining_hours),
-        maintenance_window_start=now,
-        maintenance_window_end=maintenance_window_end,
-        factors=assessment.anomaly_metrics,
-        is_mock=True,
-        trace_id=current_trace_id(),
-    )
-    equipment.next_maintenance_at = maintenance_window_end.date()
-    db.add(prediction)
-    db.flush()
+    _metrics = get_metrics()
+    _model_family = "deterministic-rules"
+    _infer_started = time.perf_counter()
+    try:
+        prediction = RiskPrediction(
+            equipment_id=equipment.id,
+            anomaly_event_id=anomaly.id,
+            risk_level=assessment.risk_level,
+            failure_mode=assessment.fault_type or "unknown_anomaly",
+            probability=probability,
+            remaining_useful_life_hours=remaining_hours,
+            predicted_failure_at=now + timedelta(hours=remaining_hours),
+            maintenance_window_start=now,
+            maintenance_window_end=maintenance_window_end,
+            factors=assessment.anomaly_metrics,
+            is_mock=True,
+            model_version="deterministic-rules-v1",
+            trace_id=current_trace_id(),
+        )
+        equipment.next_maintenance_at = maintenance_window_end.date()
+        db.add(prediction)
+        db.flush()
+    except Exception:
+        _metrics.ml_inference_errors_total.labels(model_family=_model_family).inc()
+        raise
+    finally:
+        _metrics.ml_inference_latency_seconds.labels(
+            model_family=_model_family
+        ).observe(time.perf_counter() - _infer_started)
+    _metrics.ml_inference_total.labels(
+        model_family=_model_family, status="success"
+    ).inc()
     return prediction
 
 
@@ -1003,6 +1049,7 @@ def _create_predictive_work_order(
         created_by="maintenance-agent",
         trace_id=current_trace_id(),
     )
+    get_metrics().work_orders_created_total.labels(source="predictive").inc()
     db.add(work_order)
     db.flush()
 
@@ -1068,6 +1115,9 @@ def _create_operation_approval(
             trace_id=current_trace_id(),
         )
     )
+    get_metrics().operation_approval_total.labels(
+        status="pending", risk_level=assessment.risk_level.value
+    ).inc()
 
 
 def anomaly_reason(assessment: TelemetryAssessment) -> str:

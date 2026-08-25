@@ -28,6 +28,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.metrics import get_metrics
 from app.core.trace import current_trace_id, start_trace
 from app.db.session import SessionLocal
 from app.gateways.equipment import TelemetrySnapshot
@@ -245,6 +246,7 @@ class OpcUaGatewayService:
         self._last_connected_at = datetime.now(UTC)
         self._last_error = None
         self._consecutive_failures = 0
+        get_metrics().gateway_connected.labels(protocol="opcua", mode=self._mode).set(1)
 
     async def test_connection(self, db: Session) -> dict[str, Any]:
         """测试连接：连接并探测一个映射节点；原本未连接则测后断开。"""
@@ -338,6 +340,7 @@ class OpcUaGatewayService:
         self._last_error = str(exc)
         self._consecutive_failures += 1
         self._last_result = result
+        get_metrics().gateway_connected.labels(protocol="opcua", mode=self._mode).set(0)
         logger.warning("网关同步失败（第 %d 次）：%s", self._consecutive_failures, exc)
         self._persist_state(db)
         return result
@@ -354,6 +357,7 @@ class OpcUaGatewayService:
             self._before_sync()
 
         reads: list[NodeRead] = []
+        metrics = get_metrics()
         for mapping in mappings:
             entry = self._entry_for(mapping)
             try:
@@ -361,6 +365,9 @@ class OpcUaGatewayService:
             except Exception as exc:
                 entry.last_error = str(exc)
                 result.reads_total += 1
+                metrics.gateway_events_total.labels(
+                    protocol="opcua", mode=self._mode, status="error"
+                ).inc()
                 continue
             entry.last_error = None
             entry.last_value = read.value
@@ -368,6 +375,9 @@ class OpcUaGatewayService:
             entry.last_timestamp = read.source_timestamp
             reads.append(read)
             result.reads_total += 1
+            metrics.gateway_events_total.labels(
+                protocol="opcua", mode=self._mode, status="received"
+            ).inc()
 
         report = self._quality.process(reads)
         result.accepted = len(report.accepted)
@@ -375,6 +385,7 @@ class OpcUaGatewayService:
         result.corrections = len(report.corrections)
         result.reject_reasons = report.reject_reasons()
         for rejected in report.rejected:
+            metrics.gateway_quality_rejected_total.labels(reason=rejected.reason).inc()
             cached = self._node_entries.get(rejected.node_id)
             if cached is not None:
                 cached.last_error = f"{rejected.reason}: {rejected.detail}"
@@ -492,6 +503,8 @@ class OpcUaGatewayService:
         """
         self._event_totals["received"] += 1
         self._last_event_at = datetime.now(UTC)
+        metrics = get_metrics()
+        metrics.gateway_event_buffer_size.set(self._buffer.pending_count)
         mapping = self._mapping_by_node.get(event.node_id)
         if mapping is None:
             self._event_totals["unknown_node"] += 1
@@ -501,6 +514,7 @@ class OpcUaGatewayService:
         reason = _event_reject_reason(event)
         if reason is not None:
             self._event_totals["rejected"] += 1
+            metrics.gateway_quality_rejected_total.labels(reason=reason).inc()
             entry = self._entry_for(mapping)
             entry.last_error = reason
             self._last_event_summary = f"{event.node_id} 被拒绝（{reason}）"
@@ -509,9 +523,15 @@ class OpcUaGatewayService:
         outcome = self._buffer.add(event)
         if outcome == "duplicate":
             self._event_totals["duplicates_suppressed"] += 1
+            metrics.gateway_events_total.labels(
+                protocol="opcua", mode=self._mode, status="duplicate"
+            ).inc()
             return
 
         self._event_totals["accepted"] += 1
+        metrics.gateway_events_total.labels(
+            protocol="opcua", mode=self._mode, status="accepted"
+        ).inc()
         timestamp = event.source_timestamp or datetime.now(UTC)
         self._latest_values[event.node_id] = (event.value, timestamp)
         entry = self._entry_for(mapping)
@@ -698,19 +718,33 @@ class OpcUaGatewayService:
     async def flush_due(self, db: Session) -> dict[str, Any]:
         """把到期的缓冲事件聚合为快照并进入既有 AI 链路。"""
         events = self._buffer.drain_due()
+        get_metrics().gateway_event_buffer_size.set(self._buffer.pending_count)
         if not events:
             return await self._ingest_events(db, events)
         # 工业事件入口：一次 flush（一批 DataChange）共享同一条链路。
         start_trace("gateway-subscription-flush")
-        return await self._ingest_events(db, events)
+        return await self._timed_ingest(db, events)
 
     async def flush_now(self, db: Session) -> dict[str, Any]:
         """忽略 debounce 立即冲刷缓冲（停止订阅前 / 手动 / 测试）。"""
         events = self._buffer.force_drain()
+        get_metrics().gateway_event_buffer_size.set(self._buffer.pending_count)
         if not events:
             return await self._ingest_events(db, events)
         start_trace("gateway-subscription-flush")
-        return await self._ingest_events(db, events)
+        return await self._timed_ingest(db, events)
+
+    async def _timed_ingest(
+        self, db: Session, events: list[NodeDataChange]
+    ) -> dict[str, Any]:
+        """带延迟观测的冲刷入口（Observability 不改变业务行为）。"""
+        started = time.perf_counter()
+        try:
+            return await self._ingest_events(db, events)
+        finally:
+            get_metrics().gateway_flush_latency_seconds.observe(
+                time.perf_counter() - started
+            )
 
     async def _ingest_events(
         self, db: Session, events: list[NodeDataChange]
@@ -817,6 +851,7 @@ class OpcUaGatewayService:
                     trace_id=current_trace_id(),
                 )
             )
+            get_metrics().industrial_alarm_total.labels(severity=state).inc()
         self._alarm_states[equipment.id] = state
 
     def subscription_status(self) -> dict[str, Any]:
