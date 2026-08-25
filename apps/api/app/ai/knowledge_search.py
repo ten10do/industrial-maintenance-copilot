@@ -9,6 +9,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.core.metrics import get_metrics
+from app.core.otel import traced_span
 from app.models.equipment import FaultCode
 from app.models.knowledge import KnowledgeArticle
 
@@ -29,6 +30,7 @@ def _tokenize(text: str) -> list[str]:
     return tokens
 
 
+@traced_span("rag.retrieve", {"rag.backend": "keyword-baseline"})
 def search_articles(
     db: Session,
     query: str,

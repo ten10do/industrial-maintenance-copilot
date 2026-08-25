@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.ai.knowledge_search import search_articles
 from app.core.metrics import get_metrics
+from app.core.otel import traced_span
 from app.core.trace import current_trace_id, start_trace
 from app.gateways.equipment import TelemetrySnapshot
 from app.gateways.notifications import notification_gateway
@@ -248,6 +249,7 @@ def assess_snapshot(snapshot: TelemetrySnapshot) -> TelemetryAssessment:
     )
 
 
+@traced_span("telemetry.ingest")
 def ingest_snapshot(
     db: Session,
     equipment: Equipment,
@@ -800,6 +802,7 @@ def _update_sensors(
         sensor.last_seen_at = snapshot.collected_at
 
 
+@traced_span("prediction.infer", {"ml.model_family": "deterministic-rules"})
 def _create_prediction(
     db: Session,
     equipment: Equipment,
@@ -996,6 +999,7 @@ def _reserve_parts(
     recommendation.dispatch_suggestion = dispatch
 
 
+@traced_span("work_order.create", {"work_order.source": "predictive"})
 def _create_predictive_work_order(
     db: Session,
     equipment: Equipment,

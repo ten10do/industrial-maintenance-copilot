@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, supervisor_or_admin
 from app.core.metrics import get_metrics
+from app.core.otel import traced_span
 from app.core.trace import bind_trace, current_trace_id
 from app.db.session import get_db
 from app.industrial_gateway.alarm_intelligence.correlation import (
@@ -214,6 +215,7 @@ def get_alarm_event(
     return _alarm_out(alarm, analysis)
 
 
+@traced_span("alarm.analyze")
 @router.post("/{alarm_id}/analyze", response_model=AlarmAnalysisOut)
 def analyze_alarm(
     alarm_id: int,
@@ -469,6 +471,7 @@ def analyze_alarm(
     return AlarmAnalysisOut.model_validate(record)
 
 
+@traced_span("approval.review")
 @router.post("/{alarm_id}/review", response_model=AlarmAnalysisOut)
 def review_alarm_analysis(
     alarm_id: int,
@@ -510,6 +513,7 @@ def review_alarm_analysis(
     return AlarmAnalysisOut.model_validate(record)
 
 
+@traced_span("work_order.create", {"work_order.source": "alarm-intelligence"})
 @router.post("/{alarm_id}/create-work-order", response_model=AlarmWorkOrderOut)
 def create_alarm_work_order(
     alarm_id: int,

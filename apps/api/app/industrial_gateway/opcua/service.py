@@ -29,6 +29,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.metrics import get_metrics
+from app.core.otel import industrial_span
 from app.core.trace import current_trace_id, start_trace
 from app.db.session import SessionLocal
 from app.gateways.equipment import TelemetrySnapshot
@@ -739,12 +740,16 @@ class OpcUaGatewayService:
     ) -> dict[str, Any]:
         """带延迟观测的冲刷入口（Observability 不改变业务行为）。"""
         started = time.perf_counter()
-        try:
-            return await self._ingest_events(db, events)
-        finally:
-            get_metrics().gateway_flush_latency_seconds.observe(
-                time.perf_counter() - started
-            )
+        with industrial_span(
+            "gateway.buffer_flush",
+            {"gateway.mode": self._mode, "gateway.event_count": len(events)},
+        ):
+            try:
+                return await self._ingest_events(db, events)
+            finally:
+                get_metrics().gateway_flush_latency_seconds.observe(
+                    time.perf_counter() - started
+                )
 
     async def _ingest_events(
         self, db: Session, events: list[NodeDataChange]
@@ -840,17 +845,24 @@ class OpcUaGatewayService:
                 IndustrialAlarm.cleared_at.is_(None),
             ).update({"cleared_at": datetime.now(UTC)}, synchronize_session=False)
         else:
-            db.add(
-                IndustrialAlarm(
-                    equipment_id=equipment.id,
-                    severity=state,
-                    message=build_alarm_message(
-                        state, fields, alarm_active=alarm_active
-                    ),
-                    source="opcua-subscription",
-                    trace_id=current_trace_id(),
+            with industrial_span(
+                "alarm.evaluate",
+                {
+                    "alarm.severity": state,
+                    "equipment.id": equipment.id,
+                },
+            ):
+                db.add(
+                    IndustrialAlarm(
+                        equipment_id=equipment.id,
+                        severity=state,
+                        message=build_alarm_message(
+                            state, fields, alarm_active=alarm_active
+                        ),
+                        source="opcua-subscription",
+                        trace_id=current_trace_id(),
+                    )
                 )
-            )
             get_metrics().industrial_alarm_total.labels(severity=state).inc()
         self._alarm_states[equipment.id] = state
 
