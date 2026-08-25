@@ -353,10 +353,10 @@ def derive_final_status(timeline: list[dict[str, Any]]) -> str:
     approvals = by_stage.get("approval", [])
     if any(entry["status"] == "approved" for entry in approvals):
         return "approved"
-    if any(entry["status"] == "pending" for entry in approvals):
-        return "pending_approval"
     if by_stage.get("work_order"):
         return "work_order_created"
+    if any(entry["status"] == "pending" for entry in approvals):
+        return "pending_approval"
     analyses = by_stage.get("analysis", [])
     if any(entry["status"] == "WAITING_REVIEW" for entry in analyses):
         return "waiting_review"

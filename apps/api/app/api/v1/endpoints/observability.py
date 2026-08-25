@@ -15,15 +15,22 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from redis import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.deps import get_current_user
 from app.db.session import SessionLocal, get_db
-from app.industrial_gateway.models import GATEWAY_STATUS_CONNECTED, GatewayConnection
+from app.industrial_gateway.models import (
+    GATEWAY_STATUS_CONNECTED,
+    AlarmAnalysisRecord,
+    GatewayConnection,
+    IndustrialAlarm,
+)
+from app.models.intelligence import AgentRun, TelemetryRecord
 from app.models.user import User
+from app.models.workorder import WorkOrder, WorkOrderStatusEnum
 from app.services.observability_service import MAX_LIMIT, get_trace, search_traces
 
 router = APIRouter(prefix="/observability", tags=["observability"])
@@ -65,6 +72,81 @@ def search_trace_list(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/metrics-summary")
+def metrics_summary(
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """核心运行指标 JSON 汇总（供前端概览；Prometheus 原文走 /metrics）。"""
+
+    def _count(model, *filters):  # type: ignore[no-untyped-def]
+        query = db.query(func.count(model.id))
+        for condition in filters:
+            query = query.filter(condition)
+        return int(query.scalar() or 0)
+
+    try:
+        telemetry_events = _count(TelemetryRecord)
+        alarms_total = _count(IndustrialAlarm)
+        alarms_active = _count(
+            IndustrialAlarm, IndustrialAlarm.cleared_at.is_(None)
+        )
+        work_orders_total = _count(WorkOrder)
+        work_orders_open = _count(
+            WorkOrder,
+            WorkOrder.status.notin_(
+                [
+                    WorkOrderStatusEnum.completed,
+                    WorkOrderStatusEnum.cancelled,
+                ]
+            ),
+        )
+        waiting_review = _count(
+            AlarmAnalysisRecord,
+            AlarmAnalysisRecord.analysis_status == "WAITING_REVIEW",
+        )
+        agent_runs = _count(AgentRun)
+
+        latencies = (
+            db.query(AgentRun.started_at, AgentRun.finished_at)
+            .filter(
+                AgentRun.started_at.is_not(None),
+                AgentRun.finished_at.is_not(None),
+            )
+            .limit(500)
+            .all()
+        )
+        durations = [
+            (finished - started).total_seconds() * 1000
+            for started, finished in latencies
+            if finished and started
+        ]
+        agent_avg_latency_ms = (
+            round(sum(durations) / len(durations), 1) if durations else None
+        )
+
+        trace_rows = (
+            db.query(func.count(func.distinct(TelemetryRecord.trace_id)))
+            .filter(TelemetryRecord.trace_id.is_not(None))
+            .scalar()
+        )
+        traces_tracked = int(trace_rows or 0)
+
+        return {
+            "telemetry_events": telemetry_events,
+            "alarms_total": alarms_total,
+            "alarms_active": alarms_active,
+            "work_orders_total": work_orders_total,
+            "work_orders_open": work_orders_open,
+            "analyses_waiting_review": waiting_review,
+            "agent_runs_total": agent_runs,
+            "agent_avg_latency_ms": agent_avg_latency_ms,
+            "traces_tracked": traces_tracked,
+        }
+    except SQLAlchemyError as exc:
+        raise HTTPException(status_code=503, detail=f"数据库暂不可用: {exc.__class__.__name__}")
 
 
 @router.get("/health")

@@ -320,6 +320,15 @@ RAG 检索范围包括：
 
 诊断与问答保留 source、citation 和 evidence。自动生成的维修案例先进入 `draft`，经人工审核为 `published` 后才参与后续检索；LLM Provider 不可用时回退到确定性结果并记录降级状态。
 
+## Observability & Traceability
+
+端到端链路追踪覆盖模拟工业维护工作流：一次 OPC UA DataChange / 仿真故障
+产生的 Telemetry、Anomaly、Prediction、Alarm、RCA、RAG、Agent、Human Review
+与 Work Order 共享同一 `trace_id`，可在 `/observability` 与
+`/observability/traces/[traceId]` 查看完整时间线；Prometheus 指标见
+`GET /metrics`。OpenTelemetry 为可选项（`OTEL_ENABLED=false` 默认关闭）。
+详见 [docs/observability.md](docs/observability.md)。
+
 ## Safety & Human Approval
 
 即使模型输出 `failure probability = 100%`，系统也只能执行：

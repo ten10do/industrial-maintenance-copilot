@@ -1,4 +1,4 @@
-import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList, AlarmAnalysis, AlarmCorrelateResult, AlarmWorkOrderResult } from './types';
+import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList, AlarmAnalysis, AlarmCorrelateResult, AlarmWorkOrderResult, ObservabilityHealth, TraceSearchResult, TraceDetail, MetricsSummary } from './types';
 
 const BASE = '/api/v1';
 
@@ -355,4 +355,28 @@ export async function reviewAlarm(
 }
 export async function createAlarmWorkOrder(id: number) {
   return request<AlarmWorkOrderResult>(`/alarms/${id}/create-work-order`, { method: 'POST' });
+}
+
+// ---------------- Observability & Traceability ----------------
+
+export async function getObservabilityHealth() {
+  return request<ObservabilityHealth>('/observability/health');
+}
+
+export async function searchTraces(params: Record<string, string | number> = {}) {
+  const qs = '?' + new URLSearchParams(
+    Object.entries(params).reduce<Record<string, string>>((acc, [k, v]) => {
+      if (v !== '' && v !== undefined && v !== null) acc[k] = String(v);
+      return acc;
+    }, {})
+  ).toString();
+  return request<TraceSearchResult>(`/observability/traces${qs === '?' ? '' : qs}`);
+}
+
+export async function getTrace(traceId: string) {
+  return request<TraceDetail>(`/observability/traces/${encodeURIComponent(traceId)}`);
+}
+
+export async function getMetricsSummary() {
+  return request<MetricsSummary>('/observability/metrics-summary');
 }
