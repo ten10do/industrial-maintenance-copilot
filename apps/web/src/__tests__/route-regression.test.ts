@@ -7,6 +7,7 @@ const EXPECTED_ROUTES = [
   '/alarms',
   '/approvals',
   '/copilot',
+  '/demo',
   '/dashboard',
   '/equipment',
   '/equipment/[id]',
@@ -46,6 +47,6 @@ describe('application route regression', () => {
       .sort();
 
     expect(routes).toEqual([...EXPECTED_ROUTES].sort());
-    expect(routes).toHaveLength(23);
+    expect(routes).toHaveLength(24);
   });
 });
