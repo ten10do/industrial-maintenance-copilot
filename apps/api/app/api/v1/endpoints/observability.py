@@ -90,9 +90,7 @@ def metrics_summary(
     try:
         telemetry_events = _count(TelemetryRecord)
         alarms_total = _count(IndustrialAlarm)
-        alarms_active = _count(
-            IndustrialAlarm, IndustrialAlarm.cleared_at.is_(None)
-        )
+        alarms_active = _count(IndustrialAlarm, IndustrialAlarm.cleared_at.is_(None))
         work_orders_total = _count(WorkOrder)
         work_orders_open = _count(
             WorkOrder,
@@ -146,7 +144,9 @@ def metrics_summary(
             "traces_tracked": traces_tracked,
         }
     except SQLAlchemyError as exc:
-        raise HTTPException(status_code=503, detail=f"数据库暂不可用: {exc.__class__.__name__}")
+        raise HTTPException(
+            status_code=503, detail=f"数据库暂不可用: {exc.__class__.__name__}"
+        ) from exc
 
 
 @router.get("/health")
