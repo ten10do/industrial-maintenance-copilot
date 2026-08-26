@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.deps import get_current_user, supervisor_or_admin
 from app.db.session import get_db
 from app.industrial_gateway.simulator.generator import SUPPORTED_SCENARIOS
