@@ -14,7 +14,7 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    APP_NAME: str = "AI-Powered Industrial Intelligent Maintenance Platform"
+    APP_NAME: str = "Industrial Maintenance Copilot"
     APP_ENV: str = "development"
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
