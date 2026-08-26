@@ -13,6 +13,7 @@ and end-to-end traceability.**
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1)
 ![ML status](https://img.shields.io/badge/Fault%20V2-non--production%20staging-orange)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 将设备遥测、异常检测、真实试验数据故障预测、RAG 诊断、受控 Agent 运维决策、智能工单与人工审批串联为可追溯、可审计的工业运维闭环。系统默认使用软件设备模拟器与 Mock AI，无需真实设备或付费 API 即可运行完整业务流程。
 
@@ -509,11 +510,25 @@ industrial-maintenance-copilot/
 
 ![旧版带结构化引用的 Mock Copilot](docs/images/copilot.png)
 
-## Dataset & License Notice
+## License
 
-- Paderborn 数据遵循 CC BY-NC 4.0；本项目的研究结果不建立商业使用权。
-- XJTU-SY 作者来源要求引用论文，但未发现明确 LICENSE/SPDX 条款；公开可下载不等于允许再分发或商业使用。
-- 仓库不提交原始 RAR/MAT/CSV、处理后的完整数组、SQLite registry 或 `joblib` 模型 artifact。
+Source code developed in this repository is licensed under the MIT License.
+See [LICENSE](LICENSE).
+
+Third-party datasets and external materials retain their own licenses and
+usage restrictions; the MIT source-code license does not relicense them.
+
+### Dataset licensing
+
+- Paderborn Bearing Data Center dataset: CC BY-NC 4.0 — dataset rights are
+  independent from this repository's MIT source-code license, and this
+  project's research results do not establish commercial usage rights.
+- XJTU-SY Bearing Dataset: no clear explicit repository redistribution license
+  has been confirmed; this repository does not claim unrestricted
+  redistribution or commercial rights over the raw dataset.
+
+Raw RAR/MAT/CSV archives, processed arrays, SQLite registries, and `joblib`
+model artifacts are not committed to this repository.
 - 数据和模型只能通过 manifest、config SHA、Git SHA 与 artifact SHA256 追溯；使用者需自行确认原始数据授权。
 
 ## Known Limitations
