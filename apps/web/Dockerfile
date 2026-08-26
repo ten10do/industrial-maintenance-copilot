@@ -1,4 +1,4 @@
-# 工业设备运维工单 Copilot - 前端 Web Dockerfile
+# Industrial Maintenance Copilot - Frontend Web Dockerfile
 FROM node:22-alpine AS builder
 
 WORKDIR /app

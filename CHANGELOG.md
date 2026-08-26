@@ -1,5 +1,23 @@
 # Changelog
 
+## [2.0.1] - 2026-08-26
+
+### Changed
+
+- Added MIT licensing to the current source snapshot and synchronized frontend package-lock metadata.
+- Removed duplicate project-positioning text from the README.
+- Aligned Dockerfile project-name comments with `Industrial Maintenance Copilot`.
+- Tightened the `master` governance policy to use normal merge commits only.
+
+### Scope
+
+- Repository maintenance only.
+- No application behavior changes.
+- No API contract changes.
+- No ML/model changes.
+- No database changes.
+- No deployment changes.
+
 ## [2.0.0] - 2026-08-26
 
 ### Added
@@ -42,7 +60,7 @@
 - Small independent frozen bearing count and high Development CV variance
 - RUL not promoted
 - No factory workload validation
-- No production deployment of current master
+- No production deployment was performed for this release.
 - Trace propagation is in-process only
 - No HA observability backend
 
@@ -82,4 +100,5 @@
 - No production-grade multi-tenant isolation
 
 [2.0.0]: https://github.com/ten10do/industrial-maintenance-copilot/releases/tag/v2.0.0
+[2.0.1]: https://github.com/ten10do/industrial-maintenance-copilot/releases/tag/v2.0.1
 [1.0.0]: https://github.com/ten10do/industrial-maintenance-copilot/releases/tag/v1.0.0
