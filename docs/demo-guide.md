@@ -14,7 +14,7 @@
 
 自动化等价流程位于 `apps/web/e2e/intelligent-maintenance.spec.ts`。CI 和本地演示均使用 Mock Provider，不需要真实 PLC 或付费模型。
 
-# 5-Minute Portfolio Demo（/demo）
+# 5-Minute End-to-End Demo（/demo）
 
 > 定位声明：本演示运行在**确定性软件 OPC UA 模拟器**（Motor001）上，
 > 未连接真实 PLC；AI 结论为证据绑定建议，必须经人工复核。
