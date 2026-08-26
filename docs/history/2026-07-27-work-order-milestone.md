@@ -1,3 +1,9 @@
+> **Historical milestone document.**
+> This document describes the July 2026 fault-report-to-work-order milestone.
+> It does not represent the current architecture, test baseline, or project status.
+> See [README.md](../../README.md) for the current system state.
+
+---
 # 故障上报转工单业务闭环 - 完项报告
 
 **项目**: 工业设备运维工单 Copilot

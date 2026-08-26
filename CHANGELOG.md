@@ -1,5 +1,51 @@
 # Changelog
 
+## [2.0.0] - 2026-08-26
+
+### Added
+
+- Predictive maintenance research pipeline using Paderborn and XJTU-SY experimental datasets
+- Leakage-safe grouped evaluation and model governance (DatasetVersion / TrainingRun / ModelVersion / PredictionRecord lineage)
+- Fault classification V2 non-production staging workflow
+- RUL evaluation with promotion rejection when quality gates fail
+- OPC UA-compatible gateway abstraction and deterministic software simulator
+- Polling and DataChange subscription ingestion with event buffering (debounce / batch / dedupe)
+- Industrial data-quality validation (missing / NaN / bad status / stale / future timestamp / duplicate)
+- Industrial alarm state machine and alarm correlation
+- Evidence-bound RCA and RAG retrieval with explicit empty-evidence handling
+- Controlled AI agent workflow with orchestrator and per-tool audit trail
+- Human Review and OperationApproval safety gates
+- End-to-end industrial trace context across the simulated workflow
+- Prometheus-compatible runtime metrics and Trace Explorer APIs
+- Optional OpenTelemetry instrumentation (disabled by default)
+- Unified `/demo` workspace with lightweight operational equipment representation
+
+### Changed
+
+- Expanded the original work-order Copilot into an industrial AI maintenance platform
+- Unified project naming under Industrial Maintenance Copilot
+- Consolidated architecture, demo, safety, and limitation documentation
+
+### Safety & Governance
+
+- No PLC write path; gateway interaction remains read-only
+- No autonomous equipment control
+- Human Review remains mandatory for workflow progression where required
+- Model promotion gates prevent rejected models from entering higher stages
+- RUL model remains rejected by promotion gate
+
+### Known Limitations
+
+- Software OPC UA simulator; no real PLC/SCADA integration
+- Lightweight operational representation only; not a high-fidelity physics digital twin
+- Fault V2 remains research/non-production staging evidence
+- Small independent frozen bearing count and high Development CV variance
+- RUL not promoted
+- No factory workload validation
+- No production deployment of current master
+- Trace propagation is in-process only
+- No HA observability backend
+
 ## [1.0.0] - 2026-07-31
 
 ### Added
@@ -35,4 +81,5 @@
 - No real inventory deduction
 - No production-grade multi-tenant isolation
 
+[2.0.0]: https://github.com/ten10do/industrial-maintenance-copilot/releases/tag/v2.0.0
 [1.0.0]: https://github.com/ten10do/industrial-maintenance-copilot/releases/tag/v1.0.0
