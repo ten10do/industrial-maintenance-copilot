@@ -26,8 +26,6 @@ and end-to-end traceability.**
 > - Real PLC / SCADA / field sensor integration: **not performed**
 > - Current focus: **maintenance and documentation**
 
-将设备遥测、异常检测、真实试验数据故障预测、RAG 诊断、受控 Agent 运维决策、智能工单与人工审批串联为可追溯、可审计的工业运维闭环。系统默认使用软件设备模拟器与 Mock AI，无需真实设备或付费 API 即可运行完整业务流程。
-
 > **AI-assisted industrial predictive maintenance platform with simulated OPC UA
 > integration, evidence-bound diagnosis, human-in-the-loop maintenance workflow,
 > and end-to-end traceability.**

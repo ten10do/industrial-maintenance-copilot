@@ -1,4 +1,4 @@
-# 工业设备运维工单 Copilot - 后端 API Dockerfile
+# Industrial Maintenance Copilot - Backend API Dockerfile
 FROM python:3.11-slim
 
 WORKDIR /app
