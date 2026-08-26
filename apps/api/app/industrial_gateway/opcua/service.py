@@ -23,10 +23,13 @@ import math
 import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:  # pragma: no cover - 仅类型检查需要
+    from app.industrial_gateway.simulator.generator import MotorSimulator
 
 from app.core.metrics import get_metrics
 from app.core.otel import industrial_span
@@ -751,6 +754,58 @@ class OpcUaGatewayService:
                     time.perf_counter() - started
                 )
 
+    async def demo_publish_ticks(
+        self, db: Session, *, ticks: int = 1
+    ) -> dict[str, Any]:
+        """Demo 专用：同步推进 Mock 仿真并冲刷（不依赖后台循环）。
+
+        仅操作进程内软件仿真器与既有订阅→质量→快照→AI 链路；
+        不包含任何对外写操作。非 Mock 模式直接拒绝。
+        """
+        if self._mode != "mock" or self._event_source is None:
+            raise RuntimeError("demo publish requires gateway mock mode")
+        # Demo 前置：装载/刷新节点映射（与订阅路径共用同一缓存）。
+        self.ensure_seed(db)
+        self._refresh_mapping_cache(db)
+
+        from datetime import timedelta
+
+        from app.industrial_gateway.opcua.subscription import NodeDataChange
+        from app.industrial_gateway.simulator.generator import NODE_NAMES
+
+        simulator = get_mock_simulator()
+        if simulator is None:
+            raise RuntimeError("mock simulator unavailable")
+
+        # 每个采样 tick 发布**全部已映射节点**（与真实 DataChange 语义一致），
+        # 时间戳严格递增（base + i 秒）——避免快速连发时同一微秒时间戳
+        # 触发质量层的 duplicate 抑制而丢弃劣化样本。
+        base_ts = datetime.now(UTC)
+        published = 0
+        for index in range(1, max(1, min(ticks, 24)) + 1):
+            values = simulator.advance()
+            ts = base_ts + timedelta(seconds=index)
+            for name in NODE_NAMES:
+                node_id = f"ns=2;s={simulator.prefix}.{name}"
+                if node_id not in self._mapping_by_node:
+                    continue  # 未映射节点不进入平台链路
+                event = NodeDataChange(
+                    node_id=node_id,
+                    value=values[name],
+                    source_timestamp=ts,
+                    status_code=0,
+                    quality="good",
+                )
+                self.on_data_change(event)
+                published += 1
+
+        flush = await self.flush_now(db)
+        return {
+            "published_events": published,
+            "trace_id": current_trace_id(),
+            **flush,
+        }
+
     async def _ingest_events(
         self, db: Session, events: list[NodeDataChange]
     ) -> dict[str, Any]:
@@ -1129,11 +1184,18 @@ def _event_reject_reason(event: NodeDataChange) -> str | None:
 # ----------------------------------------------------------------------
 
 _gateway_runtime: OpcUaGatewayService | None = None
+# Mock 模式下的进程内仿真器（Demo 场景控制目标；非 Mock 模式为 None）。
+_demo_simulator: MotorSimulator | None = None
+
+
+def get_mock_simulator() -> MotorSimulator | None:
+    """返回 Mock 网关运行时绑定的软件仿真器（仅 mock 模式存在）。"""
+    return _demo_simulator
 
 
 def get_gateway_runtime() -> OpcUaGatewayService:
     """按 Settings 装配网关运行时（懒加载单例）。"""
-    global _gateway_runtime
+    global _gateway_runtime, _demo_simulator
     if _gateway_runtime is not None:
         return _gateway_runtime
 
@@ -1152,6 +1214,7 @@ def get_gateway_runtime() -> OpcUaGatewayService:
     if isinstance(client, MockOpcUaClient):
         # Mock 模式：接入确定性电机仿真，作为进程内“设备数据源”。
         simulator = MotorSimulator(seed=42, scenario="normal")
+        _demo_simulator = simulator
         client.set_value_provider(simulator.value_provider())
         before_sync = simulator.advance
 
@@ -1192,5 +1255,6 @@ def get_gateway_runtime() -> OpcUaGatewayService:
 
 def reset_gateway_runtime() -> None:
     """测试专用：清空运行时单例。"""
-    global _gateway_runtime
+    global _gateway_runtime, _demo_simulator
     _gateway_runtime = None
+    _demo_simulator = None

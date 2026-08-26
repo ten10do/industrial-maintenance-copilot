@@ -1,4 +1,4 @@
-import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList, AlarmAnalysis, AlarmCorrelateResult, AlarmWorkOrderResult, ObservabilityHealth, TraceSearchResult, TraceDetail, MetricsSummary } from './types';
+import { User, WorkOrderStatus, Priority, Role, ApiError, ConvertToWorkOrderRequest, ConvertToWorkOrderResponse, MLModelVersion, MLPredictionRecord, GatewayStatus, GatewayNodes, GatewayTestConnect, GatewaySyncResult, GatewaySubscriptionStatus, SubscriptionActionResult, IndustrialAlarmList, AlarmAnalysis, AlarmCorrelateResult, AlarmWorkOrderResult, ObservabilityHealth, TraceSearchResult, TraceDetail, MetricsSummary, DemoState } from './types';
 
 const BASE = '/api/v1';
 
@@ -379,4 +379,33 @@ export async function getTrace(traceId: string) {
 
 export async function getMetricsSummary() {
   return request<MetricsSummary>('/observability/metrics-summary');
+}
+export async function getDemoState(equipmentCode = 'Motor001') {
+  return request<DemoState>(
+    `/demo/state?equipment_code=${encodeURIComponent(equipmentCode)}`
+  );
+}
+
+export async function setDemoScenario(
+  scenario: 'normal' | 'warning' | 'fault',
+  ticks?: number,
+  equipmentCode = 'Motor001'
+) {
+  return request<{
+    scenario: string;
+    ticks: number;
+    simulation_only: boolean;
+    published_events: number;
+    snapshots_ingested: number;
+    anomalies: number;
+    work_orders_created: number;
+    trace_id: string | null;
+  }>('/demo/simulator/scenario', {
+    method: 'POST',
+    body: JSON.stringify({
+      scenario,
+      ...(ticks ? { ticks } : {}),
+      equipment_code: equipmentCode,
+    }),
+  });
 }

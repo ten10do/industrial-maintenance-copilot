@@ -19,6 +19,46 @@
 > - Production deployment of current `master`: **not performed**
 > - Real PLC / SCADA / field sensor integration: **not performed**
 
+将设备遥测、异常检测、真实试验数据故障预测、RAG 诊断、受控 Agent 运维决策、智能工单与人工审批串联为可追溯、可审计的工业运维闭环。系统默认使用软件设备模拟器与 Mock AI，无需真实设备或付费 API 即可运行完整业务流程。
+
+> **AI-assisted industrial predictive maintenance platform with simulated OPC UA
+> integration, evidence-bound diagnosis, human-in-the-loop maintenance workflow,
+> and end-to-end traceability.**
+
+## 5-Minute Demo
+
+1. 启动项目（Docker Compose 或 Manual Development，见下文）。
+2. 使用主管账号登录（演示种子账号见 `.env.example` / 种子数据）。
+3. 打开 **`/demo`** —— Industrial AI Maintenance Demo 工作台。
+4. 点击场景按钮 **FAULT**（确定性软件 OPC UA 模拟器，seed 固定）。
+5. 观察数字视图指标变化 → Data Quality Accepted → Health 下降 → Anomaly →
+   Fault Prediction → Industrial Alarm。
+6. 查看 RCA 根因假设与 RAG Evidence（Evidence-bound）。
+7. 在 Review 面板**批准建议**（真实 Human Review 流程）。
+8. 创建 Work Order 并从工单链接进入详情。
+9. 打开底部 **View Full Trace** 跳转 `/observability/traces/{trace_id}`，
+   查看完整端到端时间线。
+
+```mermaid
+flowchart LR
+    U["User"] --> S["Scenario: NORMAL/WARNING/FAULT"]
+    S --> Sim["OPC UA Simulator (software)"]
+    Sim --> GW["Gateway (read-only)"]
+    GW --> Q["Data Quality"]
+    Q --> T["Telemetry"]
+    T --> AI["Anomaly · Prediction · Alarm"]
+    AI --> RCA["RCA + RAG Evidence"]
+    RCA --> R["Risk + Recommendation"]
+    R --> HR["Human Review"]
+    HR --> WO["Work Order"]
+    WO --> AP["OperationApproval"]
+    T -.-> TR["Trace Explorer (/observability)"]
+    WO -.-> TR
+```
+
+Demo 剧本详见 [docs/demo-guide.md](docs/demo-guide.md)；
+观测能力说明见 [docs/observability.md](docs/observability.md)。
+
 ## What This Project Does
 
 - 采集或模拟设备遥测，监控工业电机与轴承健康状态。

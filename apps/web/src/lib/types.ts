@@ -586,3 +586,116 @@ export interface MetricsSummary {
   agent_avg_latency_ms: number | null;
   traces_tracked: number;
 }
+// ---------------- Portfolio Demo Workspace ----------------
+
+export interface DemoTelemetry {
+  id: number;
+  collected_at: string | null;
+  bearing_temperature: number | null;
+  vibration_rms: number | null;
+  motor_current_a: number | null;
+  motor_voltage_v: number | null;
+  speed_rpm: number | null;
+  load_ratio_pct: number | null;
+  quality: number;
+  is_anomaly: boolean;
+  trace_id: string | null;
+}
+
+export interface DemoEquipment {
+  id: number;
+  code: string;
+  name: string;
+  status: string | null;
+  health_score: number | null;
+  risk_level: string | null;
+}
+
+export interface DemoAlarm {
+  id: number;
+  severity: string;
+  message: string;
+  source: string;
+  acknowledged: boolean;
+  cleared: boolean;
+  created_at: string | null;
+  trace_id: string | null;
+}
+
+export interface DemoPrediction {
+  id: number;
+  model_version: string;
+  failure_mode: string;
+  probability: number | null;
+  remaining_useful_life_hours: number | null;
+  is_mock: boolean;
+  created_at: string | null;
+}
+
+export interface DemoAnalysis {
+  id: number;
+  alarm_id: number;
+  analysis_status: string;
+  review_status: string | null;
+  confidence: number;
+  risk_level: string;
+  root_cause_hypothesis: string;
+  recommended_actions: string[];
+  citations: Array<Record<string, unknown>>;
+  model_version: string;
+  requires_human_review: boolean;
+  created_work_order_id: number | null;
+}
+
+export interface DemoWorkOrder {
+  id: number;
+  code: string;
+  title: string;
+  status: string | null;
+  priority: string | null;
+  assignee_id: number | null;
+  trace_id: string | null;
+}
+
+export interface DemoState {
+  equipment: DemoEquipment | null;
+  simulator: { available: boolean; scenario: string | null; tick: number | null };
+  gateway: { enabled: boolean; mode: string; status: string | null; last_sync_at: string | null };
+  telemetry: DemoTelemetry | null;
+  quality: {
+    accepted: number | null;
+    rejected: number | null;
+    reject_reasons: Record<string, number>;
+    corrections: number | null;
+    snapshots_ingested: number | null;
+  } | null;
+  anomaly: {
+    id: number;
+    fault_type: string;
+    title: string;
+    severity: string | null;
+    status: string;
+    confidence: number;
+    detected_at: string | null;
+    trace_id: string | null;
+  } | null;
+  prediction: DemoPrediction | null;
+  recommendation: {
+    id: number;
+    title: string;
+    strategy: string;
+    priority: string;
+    auto_work_order_id: number | null;
+  } | null;
+  alarm: DemoAlarm | null;
+  analysis: DemoAnalysis | null;
+  work_order: DemoWorkOrder | null;
+  approval: {
+    id: number;
+    command_type: string;
+    risk_level: string | null;
+    status: string;
+  } | null;
+  agent_run: { id: number; goal: string; status: string; provider: string } | null;
+  trace_id: string | null;
+}

@@ -7,6 +7,7 @@ from app.api.v1.endpoints import (
     auth,
     copilot,
     dashboard,
+    demo,
     equipment,
     fault_reports,
     files,
@@ -36,4 +37,5 @@ api_router.include_router(alarms.router)
 api_router.include_router(observability.router)
 api_router.include_router(ml.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(demo.router)
 api_router.include_router(files.router)
