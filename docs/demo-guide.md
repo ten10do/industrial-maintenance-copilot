@@ -45,7 +45,7 @@ FAULT 后 1 个确定性采样周期内出现 Anomaly + Prediction + Industrial 
 
 | 现象 | 处理 |
 | --- | --- |
-| 场景按钮返回 409 | 需要 `GATEWAY_ENABLED=true` 且 `GATEWAY_MODE=mock`（编排仅支持软件模拟器） |
+| 场景按钮返回 409 | 仅当 `GATEWAY_MODE` 不是 `mock`（如真实 OPC UA 模式）时拒绝；Demo 编排仅支持进程内软件模拟器 |
 | 无报警产生 | 再点一次 FAULT 多推进一个确定性 tick；确认节点映射已配置 |
 | 页面提示后端不可用 | 确认 API 启动且 `/ready`=200 |
 

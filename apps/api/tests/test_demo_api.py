@@ -78,7 +78,7 @@ def _setup_mock_gateway(monkeypatch, db, tmp_path: Path) -> Equipment:
         yaml.safe_dump(config, allow_unicode=True), encoding="utf-8"
     )
 
-    monkeypatch.setattr(settings, "GATEWAY_ENABLED", True)
+    # 仅要求 mock 模式（进程内软件模拟器）；不依赖后台轮询开关。
     monkeypatch.setattr(settings, "GATEWAY_MODE", "mock")
     monkeypatch.setattr(settings, "GATEWAY_MAPPING_CONFIG", str(mapping_path))
     reset_gateway_runtime()
@@ -100,16 +100,25 @@ def test_invalid_scenario_rejected_400(client, supervisor):
     assert response.status_code == 400
 
 
-def test_scenario_requires_enabled_mock_gateway(client, supervisor, monkeypatch):
-    """GATEWAY_ENABLED=false 时拒绝并给出配置指引。"""
+def test_scenario_works_even_when_background_polling_disabled(
+    client, supervisor, db, tmp_path, monkeypatch
+):
+    """GATEWAY_ENABLED=false（后台轮询关）时 Demo 编排仍可用：仅要求 mock 模式。"""
     monkeypatch.setattr(settings, "GATEWAY_ENABLED", False)
+    equipment = _setup_mock_gateway(monkeypatch, db, tmp_path)
     response = client.post(
         "/api/v1/demo/simulator/scenario",
-        json={"scenario": "fault"},
+        json={"scenario": "fault", "equipment_code": MOTOR_CODE},
         headers=_auth_headers(supervisor),
     )
-    assert response.status_code == 409
-    assert "simulation only" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["simulation_only"] is True
+    assert (
+        db.query(TelemetryRecord)
+        .filter(TelemetryRecord.equipment_id == equipment.id)
+        .count()
+        >= 1
+    )
 
 
 def test_scenario_refused_in_real_opcua_mode(

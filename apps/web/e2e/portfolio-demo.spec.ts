@@ -18,7 +18,10 @@ test('portfolio demo：fault 场景到工单与完整链路追踪', async ({ pag
 
   // 2. 等待工业报警产生（CRITICAL）。
   await expect(
-    page.locator('[data-testid="alarm-panel"]').getByText(/CRITICAL/)
+    page
+      .locator('[data-testid="alarm-panel"]')
+      .getByText(/CRITICAL/)
+      .first()
   ).toBeVisible({ timeout: 30000 });
 
   // 3. 生成报警分析并查看 RCA 与 RAG 证据。

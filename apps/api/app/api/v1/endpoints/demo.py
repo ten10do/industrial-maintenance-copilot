@@ -40,14 +40,8 @@ def _require_mock_gateway() -> Any:
         get_mock_simulator,
     )
 
-    if not settings.GATEWAY_ENABLED:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Demo simulator requires GATEWAY_ENABLED=true with "
-                "GATEWAY_MODE=mock (simulation only)."
-            ),
-        )
+    # 安全边界：仅要求 Mock 软件模式（进程内模拟器，与后台轮询开关
+    # GATEWAY_ENABLED 无关）；真实 OPC UA 模式下一律拒绝。
     runtime = get_gateway_runtime()
     current_mode = runtime.status().get("mode")
     if current_mode != "mock":
