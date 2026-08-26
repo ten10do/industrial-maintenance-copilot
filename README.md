@@ -1,10 +1,15 @@
-# 基于 AI Agent 的工业设备智能运维与预测性维护平台
+# Industrial Maintenance Copilot
 
-**AI-Powered Industrial Intelligent Maintenance and Predictive Maintenance Platform**
+**AI-assisted industrial maintenance platform with simulated OPC UA integration,
+predictive ML, evidence-bound diagnosis, human-in-the-loop maintenance workflow,
+and end-to-end traceability.**
+
+中文长名：基于 AI Agent 的工业设备智能运维与预测性维护平台
+（AI-Powered Industrial Intelligent Maintenance and Predictive Maintenance Platform）。
 
 [![CI](https://github.com/ten10do/industrial-maintenance-copilot/actions/workflows/ci.yml/badge.svg)](https://github.com/ten10do/industrial-maintenance-copilot/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB)
-![Next.js](https://img.shields.io/badge/Next.js-15.1.12-black)
+![Next.js](https://img.shields.io/badge/Next.js-16.3.0-black)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.115.6-009688)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1)
 ![ML status](https://img.shields.io/badge/Fault%20V2-non--production%20staging-orange)
@@ -13,11 +18,12 @@
 
 > **Project Status**
 >
-> - Core engineering development: **complete**
+> - Core engineering workflow: **complete**
 > - Fault Model V2: **local non-production staging research**
 > - RUL Model: **promotion rejected**
 > - Production deployment of current `master`: **not performed**
 > - Real PLC / SCADA / field sensor integration: **not performed**
+> - Current focus: **maintenance and documentation**
 
 将设备遥测、异常检测、真实试验数据故障预测、RAG 诊断、受控 Agent 运维决策、智能工单与人工审批串联为可追溯、可审计的工业运维闭环。系统默认使用软件设备模拟器与 Mock AI，无需真实设备或付费 API 即可运行完整业务流程。
 
@@ -25,7 +31,7 @@
 > integration, evidence-bound diagnosis, human-in-the-loop maintenance workflow,
 > and end-to-end traceability.**
 
-## 5-Minute Demo
+## Quick End-to-End Demo
 
 1. 启动项目（Docker Compose 或 Manual Development，见下文）。
 2. 使用主管账号登录（演示种子账号见 `.env.example` / 种子数据）。
@@ -381,13 +387,14 @@ RAG 检索范围包括：
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | Next.js 15.1.12、React 19、TypeScript 5.7.2、Tailwind CSS 3.4.16、TanStack Query |
+| Frontend | Next.js 16.3.0（Turbopack）、React 19、TypeScript 5.7.2、Tailwind CSS 3.4.16、TanStack Query |
 | Backend | Python 3.11、FastAPI 0.115.6、SQLAlchemy 2、Pydantic 2、Alembic versioned migrations |
 | Data | PostgreSQL 16（CI / Docker Compose）、SQLite（本地默认）、Redis 7 |
 | Async / Worker | Redis 协调的轻量 Python Worker/Scheduler heartbeat runtime；未引入 Celery |
 | ML | scikit-learn 1.6.1、SciPy 1.15.3、NumPy 2.2.6、joblib 1.4.2 |
 | AI | Provider abstraction、OpenAI-compatible optional provider、deterministic Mock、RAG、controlled Agent workflow |
 | Infrastructure | Docker Compose、GitHub Actions、Netlify/Render 配置（仅 legacy deployment） |
+| Observability | prometheus-client、optional OpenTelemetry（OTLP HTTP，默认关闭）、trace_id 贯穿领域对象 |
 | Testing | Pytest 8.3.4、Jest 29.7、Testing Library、Playwright 1.62 |
 
 ## Engineering Quality
@@ -397,17 +404,16 @@ RAG 检索范围包括：
 | Check | Result |
 | --- | --- |
 | Ruff format / lint | PASS / PASS |
-| MyPy strict | PASS，30 source files |
-| Pytest | 138 passed |
-| Backend coverage | 75.01% |
-| Intelligent-maintenance service coverage | 85% |
+| MyPy strict | PASS，52 source files |
+| Pytest | 287 passed |
+| Backend coverage | 80.00% |
 | TypeScript strict / ESLint | PASS / PASS |
-| Jest | 18 suites / 222 tests passed |
-| Frontend coverage | Statements 59.10%，Lines 60.55% |
-| Next.js production build | PASS，19 application pages |
-| Playwright | 23 passed / 1 legacy production smoke skipped |
+| Jest | 24 suites / 259 tests passed |
+| Frontend coverage | Statements / Lines above gate（详见 CI coverage report） |
+| Next.js production build | PASS |
+| Playwright | 26 passed / 1 intentional legacy smoke skipped |
 
-GitHub Actions 的 Backend quality、PostgreSQL 16 tests、Frontend quality、Frontend build、Docker Compose smoke 与 Playwright E2E 六个 Job 全部成功。CI 固定使用 Mock AI，不调用付费 API 或生产服务。
+当前验证通过 GitHub Actions 强制执行：Backend quality、PostgreSQL 16 tests、Frontend quality、Frontend build、Docker Compose smoke 与 Playwright E2E 六个 Job 全部成功（以上为最终基线数值）。CI 固定使用 Mock AI，不调用付费 API 或生产服务。
 
 测试仍保留一项 SQLAlchemy Legacy API warning，以及部分 Jest React `act(...)` console warning；它们不影响当前质量门禁，但没有被隐藏或宣称已修复。
 
@@ -523,6 +529,8 @@ industrial-maintenance-copilot/
 - Alembic 从可接管既有数据库的 `20260811_01` 基线开始；基线之前没有可追溯 revision。
 - 当前 `master` 尚未执行生产数据库迁移、模型 production promotion 或生产部署。
 - 备件预留不执行 ERP 级库存扣减，附件持久化对象存储与多租户隔离未实现。
+- Trace context 基于进程内 contextvars，不跨服务实例传播。
+- Observability 后端（Prometheus/Grafana/OTel Collector）未部署，亦无 HA 设计。
 
 ## Roadmap
 
@@ -543,6 +551,11 @@ industrial-maintenance-copilot/
 - [OPC UA 事件驱动订阅](docs/opcua-subscription.md)
 - [Controlled Agent workflow](docs/agent-workflow.md)
 - [安全边界](docs/security.md)
+- [工业报警智能分析](docs/alarm-intelligence.md)
+- [Observability 与 Traceability](docs/observability.md)
+- [Demo Guide（/demo）](docs/demo-guide.md)
+- [模拟器说明](docs/simulator.md)
+- [领域模型](docs/domain-model.md)
 - [真实数据与 Predictive ML Pipeline](docs/real-predictive-ml-pipeline.md)
 - [Leakage Audit V1](docs/ml-experiments/leakage-audit-v1.md)
 - [Paderborn Fault V1](docs/ml-experiments/paderborn-fault-v1.md)
